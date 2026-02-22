@@ -68,7 +68,7 @@ function TickerLogo({ ticker, size = 'md' }: { ticker: string; size?: 'sm' | 'md
     <div className={`${dim} bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden shadow`}>
       {!err
         ? <img
-            src={`${API_BASE}/${ticker}.png`}
+            src={`${API_BASE}/static/logos_tickers/${ticker}.png`}
             alt={ticker}
             className="w-full h-full object-contain"
             onError={() => setErr(true)}

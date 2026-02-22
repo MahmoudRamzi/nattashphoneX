@@ -1,48 +1,61 @@
-import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState, useEffect, useMemo } from 'react';
 import {
-  TrendingUp, TrendingDown, Bell, Info, Moon, Sun, Activity, Star,
-  DollarSign, Megaphone, Home, Phone, GraduationCap, ChevronDown,
-  ChevronUp, Settings, PieChart
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer
+} from 'recharts';
+import {
+  TrendingUp, TrendingDown, Bell, Moon, Sun, Activity, Star,
+  Home, Phone, GraduationCap, ChevronDown, ChevronUp,
+  Settings, PieChart, Loader2
 } from 'lucide-react';
+import QafahLogo from '@/components/Qafah_logo';
+import type { Last6DaysResponse, EmojiDay } from '@/types/message';
 
-// بيانات قائمتي (My List)
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface UptrendRecord {
+  date: string;
+  window: number;
+  QL: number;
+  [key: string]: any;
+}
+
+interface ApiResponse {
+  date: string;
+  up_trend_sum: UptrendRecord[];
+  windows: number[] | string;
+}
+
+// Arabic label → window INDEX value in record.window
+const WINDOW_MAP: Record<string, number> = {
+  'نطاق قريب': 3,
+  'متوسط':     4,
+  'بعيد':      10,
+};
+
+// ─── Static data ──────────────────────────────────────────────────────────────
 const myListCompanies = [
-  { index: 1, symbol: 'AAPL', name: 'Apple',     logo: '🍎', signal: 'accumulation', signalText: 'تجميع',  change: 2.45  },
-  { index: 2, symbol: 'NVDA', name: 'NVIDIA',    logo: '🎮', signal: 'accumulation', signalText: 'تجميع',  change: 3.21  },
-  { index: 3, symbol: 'META', name: 'Meta',      logo: '👥', signal: 'distribution', signalText: 'تصريف', change: -1.23 },
-  { index: 4, symbol: 'MSFT', name: 'Microsoft', logo: '💻', signal: 'accumulation', signalText: 'تجميع',  change: 1.67  },
-  { index: 5, symbol: 'AMD',  name: 'AMD',       logo: '🔷', signal: 'distribution', signalText: 'تصريف', change: -2.84 },
-  { index: 6, symbol: 'AMZN', name: 'Amazon',    logo: '📦', signal: 'accumulation', signalText: 'تجميع',  change: 1.89  },
+  { index: 1, symbol: 'AAPL', name: 'Apple',     logo: '🍎', signal: 'accumulation', change:  2.45 },
+  { index: 2, symbol: 'NVDA', name: 'NVIDIA',    logo: '🎮', signal: 'accumulation', change:  3.21 },
+  { index: 3, symbol: 'META', name: 'Meta',      logo: '👥', signal: 'distribution', change: -1.23 },
+  { index: 4, symbol: 'MSFT', name: 'Microsoft', logo: '💻', signal: 'accumulation', change:  1.67 },
+  { index: 5, symbol: 'AMD',  name: 'AMD',       logo: '🔷', signal: 'distribution', change: -2.84 },
+  { index: 6, symbol: 'AMZN', name: 'Amazon',    logo: '📦', signal: 'accumulation', change:  1.89 },
 ];
 
-// بيانات الشركات ذات الإعلانات
 const earningsCompanies = [
-  { ticker: 'ADBE', name: 'Adobe',      logo: '🎨', change: 5.82,  eps: '$4.38', time: 'بعد الإغلاق' },
-  { ticker: 'CRM',  name: 'Salesforce', logo: '☁️', change: 3.45,  eps: '$2.78', time: 'بعد الإغلاق' },
+  { ticker: 'ADBE', name: 'Adobe',      logo: '🎨', change:  5.82, time: 'بعد الإغلاق' },
+  { ticker: 'CRM',  name: 'Salesforce', logo: '☁️', change:  3.45, time: 'بعد الإغلاق' },
 ];
 
-// بيانات التوزيعات النقدية
 const dividendCompanies = [
-  { ticker: 'AAPL', name: 'Apple',     logo: '🍎', dividend: 0.26, exDate: '09 فبراير', yield: '0.52%' },
-  { ticker: 'MSFT', name: 'Microsoft', logo: '💻', dividend: 0.83, exDate: '20 فبراير', yield: '0.72%' },
+  { ticker: 'AAPL', name: 'Apple',     logo: '🍎', dividend: 0.26, exDate: '09 فبراير' },
+  { ticker: 'MSFT', name: 'Microsoft', logo: '💻', dividend: 0.83, exDate: '20 فبراير' },
 ];
 
-// بيانات آخر 6 أيام
-const last6Days = [
-  { day: 'الجمعة',  direction: 'down' },
-  { day: 'الخميس',  direction: 'down' },
-  { day: 'الثلاثاء', direction: 'up'   },
-  { day: 'الأربعاء', direction: 'up'   },
-  { day: 'الإثنين', direction: 'up'   },
-  { day: 'الأحد',   direction: 'up'   },
-];
-
-// التنبيهات والإشارات
-const alerts = [
-  { id: 1, symbol: 'AAPL', time: '2m ago',  message: 'Broke above resistance at 228.50', type: 'breakout', icon: TrendingUp },
-  { id: 2, symbol: 'NVDA', time: '5m ago',  message: 'Unusual volume detected (+340%)',  type: 'volume',   icon: Activity   },
-  { id: 3, symbol: 'META', time: '12m ago', message: 'Distribution pattern forming',     type: 'pattern',  icon: Star       },
+const alertsData = [
+  { id: 1, symbol: 'AAPL', time: '2m ago',  message: 'Broke above resistance at 228.50', icon: TrendingUp },
+  { id: 2, symbol: 'NVDA', time: '5m ago',  message: 'Unusual volume detected (+340%)',  icon: Activity   },
+  { id: 3, symbol: 'META', time: '12m ago', message: 'Distribution pattern forming',     icon: Star       },
 ];
 
 type Page =
@@ -54,89 +67,244 @@ interface UserDashboardProps {
   navigate: (page: Page) => void;
 }
 
-// مكون مثلث صاعد
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const UpTriangle = () => (
   <svg width="10" height="10" viewBox="0 0 10 10">
     <polygon points="5,0 10,10 0,10" fill="#22c55e" />
   </svg>
 );
-
-// مكون مثلث هابط
 const DownTriangle = () => (
   <svg width="10" height="10" viewBox="0 0 10 10">
     <polygon points="0,0 10,0 5,10" fill="#ef4444" />
   </svg>
 );
-
-// شعار قافة للشريط الجانبي
-const QafahLogo = ({ className = '' }: { className?: string }) => (
-  <svg viewBox="0 0 120 40" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* المربعات العلوية */}
-    <rect x="0"  y="0" width="8" height="8" rx="1" fill="#3b82f6" />
-    <rect x="10" y="0" width="8" height="8" rx="1" fill="#3b82f6" opacity="0.6" />
-    {/* الحرف Q الرئيسي */}
-    <circle cx="9" cy="22" r="8" stroke="#3b82f6" strokeWidth="2.5" fill="none" />
-    <line x1="14" y1="27" x2="18" y2="31" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />
-    {/* النص QAFAH */}
-    <text x="24" y="28" fontFamily="serif" fontWeight="bold" fontSize="14" fill="currentColor">QAFAH</text>
+const NeutralCircle = () => (
+  <svg width="10" height="10" viewBox="0 0 10 10">
+    <circle cx="5" cy="5" r="4" fill="#94a3b8" />
   </svg>
 );
 
-// شعار قافة للعلامة المائية
-const QafahWatermark = ({ className = '' }: { className?: string }) => (
-  <div className={`flex flex-col items-center opacity-10 pointer-events-none select-none ${className}`}>
-    <svg viewBox="0 0 120 40" className="w-32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0"  y="0" width="8" height="8" rx="1" fill="#3b82f6" />
-      <rect x="10" y="0" width="8" height="8" rx="1" fill="#3b82f6" opacity="0.6" />
-      <circle cx="9" cy="22" r="8" stroke="#3b82f6" strokeWidth="2.5" fill="none" />
-      <line x1="14" y1="27" x2="18" y2="31" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />
-      <text x="24" y="28" fontFamily="serif" fontWeight="bold" fontSize="14" fill="currentColor">QAFAH</text>
-    </svg>
-    <span className="text-xs font-bold tracking-widest mt-1">QAFAH</span>
-  </div>
-);
+const formatXAxis = (dateStr: string) => {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  } catch { return dateStr; }
+};
 
+const sparseTicks = (dates: string[], count = 6): string[] => {
+  if (!dates.length) return [];
+  if (dates.length <= count) return dates;
+  const step = Math.floor(dates.length / count);
+  return dates.filter((_, i) => i % step === 0);
+};
+
+// ─── Parse emoji string to array ──────────────────────────────────────────────
+const parseEmojiString = (emojiStr: string): EmojiDay[] => {
+  if (!emojiStr) return [];
+  
+  // Split by whitespace and filter empty strings
+  const emojis = emojiStr.trim().split(/\s+/).filter(Boolean);
+  
+  const parsed = emojis.map(emoji => {
+    let direction: 'up' | 'down' | 'neutral' = 'neutral';
+    
+    if (emoji === '✅') direction = 'up';
+    else if (emoji === '🔻') direction = 'down';
+    
+    return { emoji, direction };
+  });
+  
+  // REVERSE the array because RTL layout reverses visual order
+  return parsed.reverse();
+};
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
+const CustomTooltip = ({
+  active, payload, label, windowIndex, hKey, lKey
+}: any) => {
+  if (!active || !payload?.length) return null;
+  const get = (key: string) => payload.find((p: any) => p.dataKey === key)?.value;
+  const ql   = get('QL');
+  const high = get(hKey);
+  const low  = get(lKey);
+  const suffix = hKey?.replace('h', '');
+  return (
+    <div
+      dir="rtl"
+      style={{
+        background: '#fff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 12,
+        padding: '10px 14px',
+        minWidth: 210,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+        fontSize: 12,
+      }}
+    >
+      <p style={{ color: '#64748b', marginBottom: 6, fontWeight: 600 }}>{label}</p>
+      {ql   != null && <p style={{ color: '#3b82f6', fontWeight: 700 }}>QAFAH {windowIndex}-يوم : {Number(ql).toFixed(3)}</p>}
+      {high != null && <p style={{ color: '#22c55e', fontWeight: 600 }}>High {suffix} {windowIndex} : {Number(high).toFixed(3)}</p>}
+      {low  != null && <p style={{ color: '#16a34a' }}>Low {suffix} {windowIndex} : {Number(low).toFixed(3)}</p>}
+    </div>
+  );
+};
+
+// ─── Custom Legend ────────────────────────────────────────────────────────────
+const ChartLegend = ({ windowIndex, hKey, lKey }: { windowIndex: number; hKey: string; lKey: string }) => {
+  const suffix = hKey.replace('h', '');
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 10, fontSize: 12, color: '#64748b' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="28" height="10">
+          <line x1="0" y1="5" x2="28" y2="5" stroke="#3b82f6" strokeWidth="2.5" />
+          <circle cx="14" cy="5" r="3.5" fill="#3b82f6" />
+        </svg>
+        QAFAH {windowIndex}-يوم
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="28" height="10">
+          <line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2.5" strokeDasharray="5 3" />
+        </svg>
+        High {suffix} {windowIndex}
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="28" height="10">
+          <line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2" strokeDasharray="5 3" opacity="0.55" />
+        </svg>
+        Low {suffix} {windowIndex}
+      </span>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
 export function UserDashboard({ navigate }: UserDashboardProps) {
-  const [activePeriod, setActivePeriod] = useState('نطاق قريب');
-  const [isDark, setIsDark] = useState(false);
+  const [activePeriod, setActivePeriod]   = useState('نطاق قريب');
+  const [isDark, setIsDark]               = useState(false);
   const [expandedMenus, setExpandedMenus] = useState(['portfolio', 'education']);
 
-  const showAllAlerts = false;
-  const displayedAlerts = showAllAlerts ? alerts : alerts.slice(0, 3);
+  const [rawData, setRawData]   = useState<UptrendRecord[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  const toggleMenu = (menu: string) => {
+  // NEW: Last 6 days state
+  const [last6DaysData, setLast6DaysData] = useState<Last6DaysResponse | null>(null);
+  const [last6Loading, setLast6Loading] = useState(true);
+
+  // ── Fetch uptrend data ────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        setApiError(null);
+        const res = await fetch('https://app.qafah.com/api/etf/uptrend-sum?mode=cached');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: ApiResponse = await res.json();
+        setRawData(data.up_trend_sum ?? []);
+      } catch (e: any) {
+        setApiError(e.message ?? 'Unknown error');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // ── Fetch last 6 days ─────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        setLast6Loading(true);
+        const res = await fetch('https://app.qafah.com/api/etf/qafah-last-6-days');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: Last6DaysResponse = await res.json();
+        setLast6DaysData(data);
+      } catch (e: any) {
+        console.error('Failed to fetch last 6 days:', e);
+      } finally {
+        setLast6Loading(false);
+      }
+    })();
+  }, []);
+
+  // ── windowIndex → actual column names ─────────────────────────────────────
+  const windowToKeys = useMemo<Record<number, { hKey: string; lKey: string }>>(() => {
+    const map: Record<number, { hKey: string; lKey: string }> = {};
+    for (const r of rawData) {
+      const w = r.window as number;
+      if (w !== undefined && !(w in map)) {
+        const hKey = Object.keys(r).find(k => k.startsWith('h'));
+        const lKey = Object.keys(r).find(k => k.startsWith('l'));
+        if (hKey && lKey) map[w] = { hKey, lKey };
+      }
+    }
+    return map;
+  }, [rawData]);
+
+  const windowIndex = WINDOW_MAP[activePeriod];
+  const keys        = windowToKeys[windowIndex];
+  const hKey        = keys?.hKey ?? '';
+  const lKey        = keys?.lKey ?? '';
+
+  // ── Recharts dataset ──────────────────────────────────────────────────────
+  const rechartsData = useMemo(() => {
+    if (!rawData.length || !keys) return [];
+    return rawData
+      .filter(d => d.window === windowIndex)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(d => ({ date: d.date, QL: d.QL, [hKey]: d[hKey], [lKey]: d[lKey] }));
+  }, [rawData, windowIndex, keys]);
+
+  const xTicks = useMemo(
+    () => sparseTicks(rechartsData.map(d => d.date)),
+    [rechartsData]
+  );
+
+  const hasData = rechartsData.length >= 2 && hKey && lKey;
+
+  // ── Parse last 6 days for current window ──────────────────────────────────
+  const last6Days = useMemo(() => {
+    if (!last6DaysData?.last_6_days) return [];
+    const key = `window_${windowIndex}` as keyof typeof last6DaysData.last_6_days;
+    const emojiStr = last6DaysData.last_6_days[key];
+    return parseEmojiString(emojiStr || '');
+  }, [last6DaysData, windowIndex]);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const toggleMenu = (menu: string) =>
     setExpandedMenus(prev =>
       prev.includes(menu) ? prev.filter(m => m !== menu) : [...prev, menu]
     );
-  };
 
   const getSignalBadge = (signal: string, change: number) => {
-    if (signal === 'accumulation') {
-      return (
-        <div className="flex flex-col items-end gap-0.5">
-          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full font-medium">
-            تجميع
-          </span>
-          <span className="text-xs text-green-600 dark:text-green-400 font-semibold">+{change}%</span>
-        </div>
-      );
-    }
+    const isAcc = signal === 'accumulation';
     return (
       <div className="flex flex-col items-end gap-0.5">
-        <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full font-medium">
-          تصريف
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+          isAcc
+            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+        }`}>
+          {isAcc ? 'تجميع' : 'تصريف'}
         </span>
-        <span className="text-xs text-red-600 dark:text-red-400 font-semibold">{change}%</span>
+        <span className={`text-xs font-semibold ${
+          isAcc ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+        }`}>
+          {isAcc ? '+' : ''}{change}%
+        </span>
       </div>
     );
   };
 
+  // ── Tick color ────────────────────────────────────────────────────────────
+  const tickColor = isDark ? '#94a3b8' : '#64748b';
+  const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+  // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? 'dark bg-slate-900' : 'bg-slate-50'}`} dir="rtl">
 
-      {/* Top Navigation */}
+      {/* Top Nav */}
       <div className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-6 justify-between sticky top-0 z-10 shadow-sm">
-        {/* Left Side - Icons */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsDark(!isDark)}
@@ -149,115 +317,81 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
           </button>
         </div>
-
-        {/* Center - Welcome */}
-        <div className="flex items-center gap-2">
-          <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">👋 أهلاً، أحمد</span>
-        </div>
-
-        {/* Right Side */}
+        <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">👋 أهلاً، أحمد</span>
         <div className="w-24" />
       </div>
 
       <div className="flex flex-1">
 
-        {/* Right Sidebar */}
+        {/* Sidebar */}
         <aside className="w-64 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 flex flex-col py-4 px-3 gap-1 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto">
-
-          {/* Logo */}
           <div className="px-4 pb-4 pt-1">
             <QafahLogo className="w-28 text-slate-800 dark:text-white" />
           </div>
 
-          {/* Dashboard */}
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-semibold text-sm w-full">
-            <Home className="w-4 h-4" />
-            لوحة التحكم
+            <Home className="w-4 h-4" /> لوحة التحكم
+          </button>
+          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full">
+            <Phone className="w-4 h-4" /> Calls
           </button>
 
-          {/* Calls */}
-          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm w-full">
-            <Phone className="w-4 h-4" />
-            Calls
-          </button>
-
-          {/* Portfolio - Expandable */}
           <div>
-            <button
-              onClick={() => toggleMenu('portfolio')}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            >
-              <span className="flex items-center gap-3 text-sm">
-                <PieChart className="w-4 h-4" />
-                محفظتي
-              </span>
+            <button onClick={() => toggleMenu('portfolio')} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              <span className="flex items-center gap-3 text-sm"><PieChart className="w-4 h-4" /> محفظتي</span>
               {expandedMenus.includes('portfolio') ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
             {expandedMenus.includes('portfolio') && (
               <div className="mr-4 mt-1 flex flex-col gap-0.5 border-r-2 border-slate-100 dark:border-slate-700 pr-3">
-                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors w-full">
-                  الأسواق
-                </button>
-                {/* ✅ فاحص السوق navigates to companies-accumulation */}
-                <button
-                  onClick={() => navigate('companies-accumulation')}
-                  className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors w-full"
-                >
-                  فاحص السوق
-                </button>
+                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 w-full">الأسواق</button>
+                <button onClick={() => navigate('companies-accumulation')} className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 w-full">فاحص السوق</button>
               </div>
             )}
           </div>
 
-          {/* Indicators Alerts */}
-          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm w-full">
-            <Activity className="w-4 h-4" />
-            Indicators Alerts
+          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full">
+            <Activity className="w-4 h-4" /> Indicators Alerts
           </button>
 
-          {/* Education - Expandable */}
           <div>
-            <button
-              onClick={() => toggleMenu('education')}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            >
-              <span className="flex items-center gap-3 text-sm">
-                <GraduationCap className="w-4 h-4" />
-                التعليم
-              </span>
+            <button onClick={() => toggleMenu('education')} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              <span className="flex items-center gap-3 text-sm"><GraduationCap className="w-4 h-4" /> التعليم</span>
               {expandedMenus.includes('education') ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
             {expandedMenus.includes('education') && (
               <div className="mr-4 mt-1 flex flex-col gap-0.5 border-r-2 border-slate-100 dark:border-slate-700 pr-3">
-                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors w-full">Academy</button>
-                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors w-full">Tutorials</button>
-                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors w-full">Meeting</button>
+                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 w-full">Academy</button>
+                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 w-full">Tutorials</button>
+                <button className="text-right px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 w-full">Meeting</button>
               </div>
             )}
           </div>
 
-          {/* Settings */}
-          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm w-full mt-auto">
-            <Settings className="w-4 h-4" />
-            Settings
+          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full mt-auto">
+            <Settings className="w-4 h-4" /> Settings
           </button>
         </aside>
 
-        {/* Main Content */}
+        {/* Main */}
         <main className="flex-1 p-6 overflow-auto">
-
-          {/* Main Grid - Chart (2 cols) + My List (1 col) */}
           <div className="grid grid-cols-3 gap-6 mb-6">
 
-            {/* Chart Section - 2 columns */}
+            {/* ── Chart Card ── */}
             <div className="col-span-2 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
+
+              {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="font-bold text-slate-800 dark:text-white text-base">شارت قافة</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">تحليل هيكل السوق</p>
+                  <h2 className="font-bold text-slate-800 dark:text-white text-base">
+                    مقارنة مؤشرات QAFAH
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    النافذة الأساسية: {windowIndex}
+                    {hKey ? ` — ${hKey} / ${lKey}` : ''}
+                  </p>
                 </div>
                 <div className="flex gap-1 bg-slate-100 dark:bg-slate-700 rounded-xl p-1">
-                  {['نطاق قريب', 'متوسط', 'بعيد'].map((period) => (
+                  {Object.keys(WINDOW_MAP).map((period) => (
                     <button
                       key={period}
                       onClick={() => setActivePeriod(period)}
@@ -273,92 +407,136 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 </div>
               </div>
 
-              {/* Chart area with watermark */}
-              <div className="relative h-52 rounded-xl bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
-                {/* Watermark */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <QafahWatermark className="text-slate-800 dark:text-white" />
-                </div>
+              {/* Recharts */}
+              <div className="h-64 w-full">
+                {loading ? (
+                  <div className="h-full flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                  </div>
+                ) : apiError ? (
+                  <div className="h-full flex items-center justify-center text-xs text-red-500">خطأ: {apiError}</div>
+                ) : !hasData ? (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">لا توجد بيانات للنطاق المحدد</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={rechartsData} margin={{ top: 10, right: 16, left: 0, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
 
-                {/* Y-axis */}
-                <div className="absolute right-2 top-0 h-full flex flex-col justify-between py-2 text-xs text-slate-400">
-                  <span>8,500</span>
-                  <span>8,000</span>
-                  <span>7,500</span>
-                  <span>7,000</span>
-                </div>
+                      <XAxis
+                        dataKey="date"
+                        ticks={xTicks}
+                        tickFormatter={formatXAxis}
+                        tick={{ fontSize: 11, fill: tickColor }}
+                        axisLine={{ stroke: gridColor }}
+                        tickLine={false}
+                        label={{ value: 'التاريخ', position: 'insideBottom', offset: -12, fontSize: 11, fill: tickColor }}
+                      />
 
-                {/* Grid lines */}
-                <div className="absolute inset-0 flex flex-col justify-between py-2 pr-10">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="border-t border-slate-200 dark:border-slate-700 w-full" />
-                  ))}
-                </div>
+                      <YAxis
+                        tick={{ fontSize: 11, fill: tickColor }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={52}
+                        label={{ value: 'إجمالي الصاعد', angle: -90, position: 'insideLeft', offset: 14, fontSize: 11, fill: tickColor }}
+                      />
 
-                {/* SVG Chart line */}
-                <svg className="absolute inset-0 w-full h-full pr-10" preserveAspectRatio="none" viewBox="0 0 300 200">
-                  <defs>
-                    <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M0,160 C30,150 60,130 90,120 C120,110 150,140 180,100 C210,60 240,80 270,50 L270,200 L0,200 Z"
-                    fill="url(#chartGrad)"
-                  />
-                  <path
-                    d="M0,160 C30,150 60,130 90,120 C120,110 150,140 180,100 C210,60 240,80 270,50"
-                    fill="none"
-                    stroke="#3b82f6"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                      <Tooltip
+                        content={<CustomTooltip windowIndex={windowIndex} hKey={hKey} lKey={lKey} />}
+                        cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }}
+                      />
+
+                      <Line
+                        type="stepAfter"
+                        dataKey={hKey}
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        strokeDasharray="7 4"
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+
+                      <Line
+                        type="stepAfter"
+                        dataKey={lKey}
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        strokeDasharray="7 4"
+                        strokeOpacity={0.55}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+
+                      <Line
+                        type="linear"
+                        dataKey="QL"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }}
+                        activeDot={{ r: 5, fill: '#3b82f6' }}
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
 
-              {/* Last 6 Days */}
+              {/* Legend */}
+              {!loading && !apiError && hasData && (
+                <ChartLegend windowIndex={windowIndex} hKey={hKey} lKey={lKey} />
+              )}
+
+              {/* Last 6 days */}
               <div className="mt-4">
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">آخر 6 أيام</p>
-                <div className="flex gap-2">
-                  {last6Days.map((day, i) => (
-                    <div key={i} className="flex flex-col items-center gap-1">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${
-                        day.direction === 'up'
-                          ? 'bg-green-50 dark:bg-green-900/30'
-                          : 'bg-red-50 dark:bg-red-900/30'
-                      }`}>
-                        {day.direction === 'up' ? <UpTriangle /> : <DownTriangle />}
+                {last6Loading ? (
+                  <div className="flex items-center justify-center h-12">
+                    <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                  </div>
+                ) : last6Days.length === 0 ? (
+                  <div className="text-xs text-slate-400">لا توجد بيانات</div>
+                ) : (
+                  <div className="flex gap-2">
+                    {last6Days.map((day, i) => (
+                      <div key={i} className="flex flex-col items-center gap-1">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${
+                          day.direction === 'up' 
+                            ? 'bg-green-50 dark:bg-green-900/30' 
+                            : day.direction === 'down'
+                            ? 'bg-red-50 dark:bg-red-900/30'
+                            : 'bg-slate-50 dark:bg-slate-700/30'
+                        }`}>
+                          {day.direction === 'up' ? (
+                            <UpTriangle />
+                          ) : day.direction === 'down' ? (
+                            <DownTriangle />
+                          ) : (
+                            <NeutralCircle />
+                          )}
+                        </div>
                       </div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400">{day.day}</span>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* My List - 1 column */}
+            {/* My List */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-4">
                 <button className="text-xs text-blue-500 hover:text-blue-600 font-medium">إدارة القائمة ←</button>
                 <h2 className="font-bold text-slate-800 dark:text-white text-base">قائمتي</h2>
               </div>
               <div className="flex flex-col gap-2">
-                {myListCompanies.map((company) => (
-                  <div key={company.index} className="flex items-center justify-between py-2 border-b border-slate-50 dark:border-slate-700 last:border-0">
-                    <div className="flex items-center gap-1.5">
-                      {getSignalBadge(company.signal, company.change)}
-                    </div>
+                {myListCompanies.map((c) => (
+                  <div key={c.index} className="flex items-center justify-between py-2 border-b border-slate-50 dark:border-slate-700 last:border-0">
+                    {getSignalBadge(c.signal, c.change)}
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{company.name}</p>
-                        <p className="text-xs text-slate-400">{company.symbol}</p>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.name}</p>
+                        <p className="text-xs text-slate-400">{c.symbol}</p>
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">
-                        {company.logo}
-                      </div>
-                      <span className="text-xs text-slate-300 dark:text-slate-600 w-4 text-center">{company.index}</span>
+                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">{c.logo}</div>
+                      <span className="text-xs text-slate-300 dark:text-slate-600 w-4 text-center">{c.index}</span>
                     </div>
                   </div>
                 ))}
@@ -366,7 +544,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
             </div>
           </div>
 
-          {/* Bottom Grid - 3 Cards */}
+          {/* Bottom Grid */}
           <div className="grid grid-cols-3 gap-6">
 
             {/* Earnings */}
@@ -375,29 +553,25 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-semibold">4 شركة</span>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">إعلانات الأرباح</h3>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 text-right mb-3">الشركات ذات الإعلانات</p>
-              <div className="flex flex-col gap-3">
-                {earningsCompanies.map((company) => (
-                  <div key={company.ticker} className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 mt-4">
+                {earningsCompanies.map((c) => (
+                  <div key={c.ticker} className="flex items-center justify-between">
                     <div className="text-right">
-                      <span className={`text-sm font-bold ${company.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {company.change >= 0 ? '+' : ''}{company.change}%
+                      <span className={`text-sm font-bold ${c.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {c.change >= 0 ? '+' : ''}{c.change}%
                       </span>
-                      <p className="text-xs text-slate-400">{company.time}</p>
+                      <p className="text-xs text-slate-400">{c.time}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{company.ticker}</p>
-                        <p className="text-xs text-slate-400">{company.name}</p>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.ticker}</p>
+                        <p className="text-xs text-slate-400">{c.name}</p>
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">
-                        {company.logo}
-                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">{c.logo}</div>
                     </div>
                   </div>
                 ))}
               </div>
-              <button className="mt-4 text-xs text-blue-500 hover:text-blue-600 w-full text-left font-medium">المزيد ←</button>
             </div>
 
             {/* Dividends */}
@@ -406,27 +580,23 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-semibold">4 شركة</span>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">التوزيعات النقدية</h3>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 text-right mb-3">الشركات ذات التوزيعات</p>
-              <div className="flex flex-col gap-3">
-                {dividendCompanies.map((company) => (
-                  <div key={company.ticker} className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 mt-4">
+                {dividendCompanies.map((c) => (
+                  <div key={c.ticker} className="flex items-center justify-between">
                     <div className="text-right">
-                      <span className="text-sm font-bold text-green-600 dark:text-green-400">${company.dividend}</span>
-                      <p className="text-xs text-slate-400">{company.exDate}</p>
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400">${c.dividend}</span>
+                      <p className="text-xs text-slate-400">{c.exDate}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{company.ticker}</p>
-                        <p className="text-xs text-slate-400">{company.name}</p>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.ticker}</p>
+                        <p className="text-xs text-slate-400">{c.name}</p>
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">
-                        {company.logo}
-                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">{c.logo}</div>
                     </div>
                   </div>
                 ))}
               </div>
-              <button className="mt-4 text-xs text-blue-500 hover:text-blue-600 w-full text-left font-medium">المزيد ←</button>
             </div>
 
             {/* Alerts */}
@@ -436,7 +606,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">التنبيهات والإشارات</h3>
               </div>
               <div className="flex flex-col gap-3 mt-3">
-                {displayedAlerts.map((alert) => {
+                {alertsData.map((alert) => {
                   const Icon = alert.icon;
                   return (
                     <div key={alert.id} className="flex items-start gap-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-700/50">
@@ -446,13 +616,12 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                           <span className="text-xs text-slate-400">{alert.time}</span>
                           <span className="text-xs font-bold text-slate-800 dark:text-white">{alert.symbol}</span>
                         </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{alert.message}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed truncate">{alert.message}</p>
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <button className="mt-4 text-xs text-blue-500 hover:text-blue-600 w-full text-left font-medium">المزيد ←</button>
             </div>
 
           </div>
