@@ -27,6 +27,36 @@ interface ApiResponse {
   windows: number[] | string;
 }
 
+// ── NEW: Yahoo Finance types ───────────────────────────────────────────────────
+interface EarningsCompany {
+  ticker: string;
+  name: string;
+  change: number;
+  time: string;             // Arabic label e.g. "بعد الإغلاق"
+  earnings_date: string;
+  earnings_date_ar: string;
+}
+
+interface EarningsResponse {
+  count: number;
+  earnings: EarningsCompany[];
+  updated: string;
+}
+
+interface DividendCompany {
+  ticker: string;
+  name: string;
+  dividend: number;
+  ex_date: string;
+  exDate: string;           // Arabic label e.g. "09 فبراير"
+}
+
+interface DividendsResponse {
+  count: number;
+  dividends: DividendCompany[];
+  updated: string;
+}
+
 // Arabic label → window INDEX value in record.window
 const WINDOW_MAP: Record<string, number> = {
   'نطاق قريب': 3,
@@ -42,16 +72,6 @@ const myListCompanies = [
   { index: 4, symbol: 'MSFT', name: 'Microsoft', ticker: 'MSFT', signal: 'accumulation', change:  1.67 },
   { index: 5, symbol: 'AMD',  name: 'AMD',       ticker: 'AMD',  signal: 'distribution', change: -2.84 },
   { index: 6, symbol: 'AMZN', name: 'Amazon',    ticker: 'AMZN', signal: 'accumulation', change:  1.89 },
-];
-
-const earningsCompanies = [
-  { ticker: 'ADBE', name: 'Adobe',      change:  5.82, time: 'بعد الإغلاق' },
-  { ticker: 'CRM',  name: 'Salesforce', change:  3.45, time: 'بعد الإغلاق' },
-];
-
-const dividendCompanies = [
-  { ticker: 'AAPL', name: 'Apple',     dividend: 0.26, exDate: '09 فبراير' },
-  { ticker: 'MSFT', name: 'Microsoft', dividend: 0.83, exDate: '20 فبراير' },
 ];
 
 const alertsData = [
@@ -70,7 +90,6 @@ interface UserDashboardProps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-// Image-based indicators
 const UpTriangle = () => (
   <img src="data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='24' height='24' rx='8' fill='%2322c55e'/%3E%3Cpath d='M12 7L18 16H6L12 7Z' fill='white'/%3E%3C/svg%3E" alt="up" className="w-6 h-6" />
 );
@@ -83,26 +102,20 @@ const NeutralCircle = () => (
   </svg>
 );
 
-// Helper to get last 6 days with Arabic names
 const getLast6DaysWithNames = (data: EmojiDay[]): { day: EmojiDay; dateObj: Date; arName: string }[] => {
   const arNames = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
   const today = new Date();
-  
   return data.map((day, idx) => {
     const daysAgo = data.length - 1 - idx;
     const dateObj = new Date(today);
     dateObj.setDate(dateObj.getDate() - daysAgo);
-    const dayOfWeek = dateObj.getDay();
-    const arName = arNames[dayOfWeek];
-    
+    const arName = arNames[dateObj.getDay()];
     return { day, dateObj, arName };
   });
 };
 
-// Logo component with fallback
 const CompanyLogo = ({ ticker }: { ticker: string }) => {
   const [error, setError] = useState(false);
-  
   if (error) {
     return (
       <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg font-bold text-slate-600">
@@ -110,7 +123,6 @@ const CompanyLogo = ({ ticker }: { ticker: string }) => {
       </div>
     );
   }
-  
   return (
     <img
       src={`${API_BASE}/static/logos_tickers/${ticker}.png`}
@@ -136,29 +148,20 @@ const sparseTicks = (dates: string[], count = 6): string[] => {
   return dates.filter((_, i) => i % step === 0);
 };
 
-// ─── Parse emoji string to array ──────────────────────────────────────────────
 const parseEmojiString = (emojiStr: string): EmojiDay[] => {
   if (!emojiStr) return [];
-  
-  // Split by whitespace and filter empty strings
   const emojis = emojiStr.trim().split(/\s+/).filter(Boolean);
-  
   const parsed = emojis.map(emoji => {
     let direction: 'up' | 'down' | 'neutral' = 'neutral';
-    
     if (emoji === '✅') direction = 'up';
     else if (emoji === '🔻') direction = 'down';
-    
     return { emoji, direction };
   });
-  
-  // REVERSE the array because RTL layout reverses visual order
   return parsed.reverse();
 };
+
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
-const CustomTooltip = ({
-  active, payload, label, windowIndex, hKey, lKey
-}: any) => {
+const CustomTooltip = ({ active, payload, label, windowIndex, hKey, lKey }: any) => {
   if (!active || !payload?.length) return null;
   const get = (key: string) => payload.find((p: any) => p.dataKey === key)?.value;
   const ql   = get('QL');
@@ -166,18 +169,7 @@ const CustomTooltip = ({
   const low  = get(lKey);
   const suffix = hKey?.replace('h', '');
   return (
-    <div
-      dir="rtl"
-      style={{
-        background: '#fff',
-        border: '1px solid #e2e8f0',
-        borderRadius: 12,
-        padding: '10px 14px',
-        minWidth: 210,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-        fontSize: 12,
-      }}
-    >
+    <div dir="rtl" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', minWidth: 210, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontSize: 12 }}>
       <p style={{ color: '#64748b', marginBottom: 6, fontWeight: 600 }}>{label}</p>
       {ql   != null && <p style={{ color: '#3b82f6', fontWeight: 700 }}>QAFAH {windowIndex}-يوم : {Number(ql).toFixed(3)}</p>}
       {high != null && <p style={{ color: '#22c55e', fontWeight: 600 }}>High {suffix} {windowIndex} : {Number(high).toFixed(3)}</p>}
@@ -192,42 +184,53 @@ const ChartLegend = ({ windowIndex, hKey, lKey }: { windowIndex: number; hKey: s
   return (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 10, fontSize: 12, color: '#64748b' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="28" height="10">
-          <line x1="0" y1="5" x2="28" y2="5" stroke="#3b82f6" strokeWidth="2.5" />
-          <circle cx="14" cy="5" r="3.5" fill="#3b82f6" />
-        </svg>
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#3b82f6" strokeWidth="2.5" /><circle cx="14" cy="5" r="3.5" fill="#3b82f6" /></svg>
         QAFAH {windowIndex}-يوم
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="28" height="10">
-          <line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2.5" strokeDasharray="5 3" />
-        </svg>
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2.5" strokeDasharray="5 3" /></svg>
         High {suffix} {windowIndex}
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="28" height="10">
-          <line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2" strokeDasharray="5 3" opacity="0.55" />
-        </svg>
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2" strokeDasharray="5 3" opacity="0.55" /></svg>
         Low {suffix} {windowIndex}
       </span>
     </div>
   );
 };
 
+// ── Skeleton loader for cards ──────────────────────────────────────────────────
+const SkeletonRow = () => (
+  <div className="flex items-center justify-between animate-pulse">
+    <div className="h-8 w-16 bg-slate-100 dark:bg-slate-700 rounded-lg" />
+    <div className="flex items-center gap-2">
+      <div className="h-4 w-20 bg-slate-100 dark:bg-slate-700 rounded" />
+      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700" />
+    </div>
+  </div>
+);
+
 // ══════════════════════════════════════════════════════════════════════════════
 export function UserDashboard({ navigate }: UserDashboardProps) {
   const [activePeriod, setActivePeriod]   = useState('نطاق قريب');
   const [isDark, setIsDark]               = useState(false);
   const [expandedMenus, setExpandedMenus] = useState(['portfolio', 'education']);
-  const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({});
 
   const [rawData, setRawData]   = useState<UptrendRecord[]>([]);
   const [loading, setLoading]   = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // NEW: Last 6 days state
   const [last6DaysData, setLast6DaysData] = useState<Last6DaysResponse | null>(null);
-  const [last6Loading, setLast6Loading] = useState(true);
+  const [last6Loading, setLast6Loading]   = useState(true);
+
+  // ── NEW: Live Yahoo Finance state ─────────────────────────────────────────
+  const [earningsData, setEarningsData]     = useState<EarningsCompany[]>([]);
+  const [earningsLoading, setEarningsLoading] = useState(true);
+  const [earningsError, setEarningsError]   = useState<string | null>(null);
+
+  const [dividendsData, setDividendsData]     = useState<DividendCompany[]>([]);
+  const [dividendsLoading, setDividendsLoading] = useState(true);
+  const [dividendsError, setDividendsError]   = useState<string | null>(null);
 
   // ── Fetch uptrend data ────────────────────────────────────────────────────
   useEffect(() => {
@@ -235,7 +238,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
       try {
         setLoading(true);
         setApiError(null);
-        const res = await fetch('https://app.qafah.com/api/etf/uptrend-sum?mode=cached');
+        const res = await fetch(`${API_BASE}/api/etf/uptrend-sum?mode=cached`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: ApiResponse = await res.json();
         setRawData(data.up_trend_sum ?? []);
@@ -252,7 +255,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
     (async () => {
       try {
         setLast6Loading(true);
-        const res = await fetch('https://app.qafah.com/api/etf/qafah-last-6-days');
+        const res = await fetch(`${API_BASE}/api/etf/qafah-last-6-days`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: Last6DaysResponse = await res.json();
         setLast6DaysData(data);
@@ -260,6 +263,44 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
         console.error('Failed to fetch last 6 days:', e);
       } finally {
         setLast6Loading(false);
+      }
+    })();
+  }, []);
+
+  // ── NEW: Fetch live earnings from Yahoo Finance ───────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        setEarningsLoading(true);
+        setEarningsError(null);
+        const res = await fetch(`${API_BASE}/api/market/earnings`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: EarningsResponse = await res.json();
+        setEarningsData(data.earnings ?? []);
+      } catch (e: any) {
+        console.error('Failed to fetch earnings:', e);
+        setEarningsError(e.message ?? 'Unknown error');
+      } finally {
+        setEarningsLoading(false);
+      }
+    })();
+  }, []);
+
+  // ── NEW: Fetch live dividends from Yahoo Finance ──────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        setDividendsLoading(true);
+        setDividendsError(null);
+        const res = await fetch(`${API_BASE}/api/market/dividends`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: DividendsResponse = await res.json();
+        setDividendsData(data.dividends ?? []);
+      } catch (e: any) {
+        console.error('Failed to fetch dividends:', e);
+        setDividendsError(e.message ?? 'Unknown error');
+      } finally {
+        setDividendsLoading(false);
       }
     })();
   }, []);
@@ -283,7 +324,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
   const hKey        = keys?.hKey ?? '';
   const lKey        = keys?.lKey ?? '';
 
-  // ── Recharts dataset ──────────────────────────────────────────────────────
   const rechartsData = useMemo(() => {
     if (!rawData.length || !keys) return [];
     return rawData
@@ -299,7 +339,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
 
   const hasData = rechartsData.length >= 2 && hKey && lKey;
 
-  // ── Parse last 6 days for current window ──────────────────────────────────
   const last6Days = useMemo(() => {
     if (!last6DaysData?.last_6_days) return [];
     const key = `window_${windowIndex}` as keyof typeof last6DaysData.last_6_days;
@@ -307,7 +346,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
     return parseEmojiString(emojiStr || '');
   }, [last6DaysData, windowIndex]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   const toggleMenu = (menu: string) =>
     setExpandedMenus(prev =>
       prev.includes(menu) ? prev.filter(m => m !== menu) : [...prev, menu]
@@ -317,23 +355,16 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
     const isAcc = signal === 'accumulation';
     return (
       <div className="flex flex-col items-end gap-0.5">
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-          isAcc
-            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-        }`}>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isAcc ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'}`}>
           {isAcc ? 'تجميع' : 'تصريف'}
         </span>
-        <span className={`text-xs font-semibold ${
-          isAcc ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-        }`}>
+        <span className={`text-xs font-semibold ${isAcc ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
           {isAcc ? '+' : ''}{change}%
         </span>
       </div>
     );
   };
 
-  // ── Tick color ────────────────────────────────────────────────────────────
   const tickColor = isDark ? '#94a3b8' : '#64748b';
   const gridColor = isDark ? '#334155' : '#e2e8f0';
 
@@ -344,10 +375,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
       {/* Top Nav */}
       <div className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-6 justify-between sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsDark(!isDark)}
-            className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
-          >
+          <button onClick={() => setIsDark(!isDark)} className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors">
             {isDark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
           </button>
           <button className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors relative">
@@ -366,14 +394,12 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
           <div className="px-4 pb-4 pt-1">
             <QafahLogo className="w-28 text-slate-800 dark:text-white" />
           </div>
-
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-semibold text-sm w-full">
             <Home className="w-4 h-4" /> لوحة التحكم
           </button>
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full">
             <Phone className="w-4 h-4" /> Calls
           </button>
-
           <div>
             <button onClick={() => toggleMenu('portfolio')} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
               <span className="flex items-center gap-3 text-sm"><PieChart className="w-4 h-4" /> محفظتي</span>
@@ -386,11 +412,9 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
               </div>
             )}
           </div>
-
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full">
             <Activity className="w-4 h-4" /> Indicators Alerts
           </button>
-
           <div>
             <button onClick={() => toggleMenu('education')} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
               <span className="flex items-center gap-3 text-sm"><GraduationCap className="w-4 h-4" /> التعليم</span>
@@ -404,7 +428,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
               </div>
             )}
           </div>
-
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full mt-auto">
             <Settings className="w-4 h-4" /> Settings
           </button>
@@ -416,16 +439,11 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
 
             {/* ── Chart Card ── */}
             <div className="col-span-2 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
-
-              {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="font-bold text-slate-800 dark:text-white text-base">
-                    مقارنة مؤشرات QAFAH
-                  </h2>
+                  <h2 className="font-bold text-slate-800 dark:text-white text-base">مقارنة مؤشرات QAFAH</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    النافذة الأساسية: {windowIndex}
-                    {hKey ? ` — ${hKey} / ${lKey}` : ''}
+                    النافذة الأساسية: {windowIndex}{hKey ? ` — ${hKey} / ${lKey}` : ''}
                   </p>
                 </div>
                 <div className="flex gap-1 bg-slate-100 dark:bg-slate-700 rounded-xl p-1">
@@ -445,7 +463,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 </div>
               </div>
 
-              {/* Recharts AreaChart */}
               <div className="h-64 w-full">
                 {loading ? (
                   <div className="h-full flex items-center justify-center">
@@ -457,11 +474,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                   <div className="h-full flex items-center justify-center text-xs text-slate-400">لا توجد بيانات للنطاق المحدد</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart 
-                      data={rechartsData} 
-                      margin={{ top: 20, right: 16, left: 0, bottom: 20 }}
-                      onContextMenu={(_, e) => e.preventDefault()}
-                    >
+                    <AreaChart data={rechartsData} margin={{ top: 20, right: 16, left: 0, bottom: 20 }} onContextMenu={(_, e) => e.preventDefault()}>
                       <defs>
                         <linearGradient id="colorQL" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
@@ -472,79 +485,22 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                           <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-
                       <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-
-                      <XAxis
-                        dataKey="date"
-                        ticks={xTicks}
-                        tickFormatter={formatXAxis}
-                        tick={{ fontSize: 11, fill: tickColor }}
-                        axisLine={{ stroke: gridColor }}
-                        tickLine={false}
-                        label={{ value: 'التاريخ', position: 'insideBottom', offset: -12, fontSize: 11, fill: tickColor }}
-                      />
-
-                      <YAxis
-                        tick={{ fontSize: 11, fill: tickColor }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={52}
-                        label={{ value: 'إجمالي الصاعد', angle: -90, position: 'insideLeft', offset: 14, fontSize: 11, fill: tickColor }}
-                      />
-
-                      <Tooltip
-                        content={<CustomTooltip windowIndex={windowIndex} hKey={hKey} lKey={lKey} />}
-                        cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }}
-                      />
-
-                      {/* Main area - QL value */}
-                      <Area
-                        type="monotone"
-                        dataKey="QL"
-                        stroke="#3b82f6"
-                        strokeWidth={2}
-                        fillOpacity={1}
-                        fill="url(#colorQL)"
-                        isAnimationActive={false}
-                        dot={false}
-                      />
-
-                      {/* High range area */}
-                      <Area
-                        type="stepAfter"
-                        dataKey={hKey}
-                        stroke="#22c55e"
-                        strokeWidth={1.5}
-                        strokeDasharray="7 4"
-                        fill="none"
-                        isAnimationActive={false}
-                        dot={false}
-                      />
-
-                      {/* Low range area */}
-                      <Area
-                        type="stepAfter"
-                        dataKey={lKey}
-                        stroke="#22c55e"
-                        strokeWidth={1.5}
-                        strokeDasharray="7 4"
-                        strokeOpacity={0.55}
-                        fill="none"
-                        isAnimationActive={false}
-                        dot={false}
-                      />
+                      <XAxis dataKey="date" ticks={xTicks} tickFormatter={formatXAxis} tick={{ fontSize: 11, fill: tickColor }} axisLine={{ stroke: gridColor }} tickLine={false} label={{ value: 'التاريخ', position: 'insideBottom', offset: -12, fontSize: 11, fill: tickColor }} />
+                      <YAxis tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} width={52} label={{ value: 'إجمالي الصاعد', angle: -90, position: 'insideLeft', offset: 14, fontSize: 11, fill: tickColor }} />
+                      <Tooltip content={<CustomTooltip windowIndex={windowIndex} hKey={hKey} lKey={lKey} />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }} />
+                      <Area type="monotone" dataKey="QL" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorQL)" isAnimationActive={false} dot={false} />
+                      <Area type="stepAfter" dataKey={hKey} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="7 4" fill="none" isAnimationActive={false} dot={false} />
+                      <Area type="stepAfter" dataKey={lKey} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="7 4" strokeOpacity={0.55} fill="none" isAnimationActive={false} dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 )}
               </div>
 
-              {/* Legend */}
               {!loading && !apiError && hasData && (
                 <ChartLegend windowIndex={windowIndex} hKey={hKey} lKey={lKey} />
               )}
 
-              {/* Last 6 days - stretched */}
               <div className="mt-6">
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">آخر 6 أيام</p>
                 {last6Loading ? (
@@ -557,13 +513,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                   <div className="flex gap-2 justify-between w-full">
                     {getLast6DaysWithNames(last6Days).map((item, i) => (
                       <div key={i} className="flex flex-col items-center gap-2 flex-1">
-                        {item.day.direction === 'up' ? (
-                          <UpTriangle />
-                        ) : item.day.direction === 'down' ? (
-                          <DownTriangle />
-                        ) : (
-                          <NeutralCircle />
-                        )}
+                        {item.day.direction === 'up' ? <UpTriangle /> : item.day.direction === 'down' ? <DownTriangle /> : <NeutralCircle />}
                         <p className="text-xs text-slate-600 dark:text-slate-400 font-medium text-center">{item.arName}</p>
                       </div>
                     ))}
@@ -599,55 +549,82 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
           {/* Bottom Grid */}
           <div className="grid grid-cols-3 gap-6">
 
-            {/* Earnings */}
+            {/* ── LIVE Earnings ─────────────────────────────────────────── */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-semibold">4 شركة</span>
+                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-semibold">
+                  {earningsLoading ? '…' : `${earningsData.length} شركة`}
+                </span>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">إعلانات الأرباح</h3>
               </div>
+
               <div className="flex flex-col gap-3 mt-4">
-                {earningsCompanies.map((c) => (
-                  <div key={c.ticker} className="flex items-center justify-between">
-                    <div className="text-right">
-                      <span className={`text-sm font-bold ${c.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {c.change >= 0 ? '+' : ''}{c.change}%
-                      </span>
-                      <p className="text-xs text-slate-400">{c.time}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.ticker}</p>
-                        <p className="text-xs text-slate-400">{c.name}</p>
-                      </div>
+                {earningsLoading ? (
+                  // Skeleton
+                  Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
+                ) : earningsError ? (
+                  <p className="text-xs text-red-400 text-center py-4">فشل تحميل البيانات</p>
+                ) : earningsData.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">لا توجد إعلانات قريبة</p>
+                ) : (
+                  earningsData.map((c) => (
+                    <div key={c.ticker} className="flex items-center gap-2">
+                      {/* Logo */}
                       <CompanyLogo ticker={c.ticker} />
+                      {/* Ticker + Name — grows to fill space */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-800 dark:text-white leading-tight">{c.ticker}</p>
+                        <p className="text-xs text-slate-400 truncate leading-tight">{c.name}</p>
+                      </div>
+                      {/* Change + Date — fixed width, right-aligned */}
+                      <div className="text-left shrink-0">
+                        <p className={`text-sm font-bold leading-tight ${c.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {c.change >= 0 ? '+' : ''}{c.change}%
+                        </p>
+                        <p className="text-xs text-slate-400 leading-tight">{c.time}</p>
+                        <p className="text-xs text-blue-400 font-medium leading-tight">{c.earnings_date_ar}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
-            {/* Dividends */}
+            {/* ── LIVE Dividends ────────────────────────────────────────── */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-semibold">4 شركة</span>
+                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-semibold">
+                  {dividendsLoading ? '…' : `${dividendsData.length} شركة`}
+                </span>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">التوزيعات النقدية</h3>
               </div>
+
               <div className="flex flex-col gap-3 mt-4">
-                {dividendCompanies.map((c) => (
-                  <div key={c.ticker} className="flex items-center justify-between">
-                    <div className="text-right">
-                      <span className="text-sm font-bold text-green-600 dark:text-green-400">${c.dividend}</span>
-                      <p className="text-xs text-slate-400">{c.exDate}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.ticker}</p>
-                        <p className="text-xs text-slate-400">{c.name}</p>
-                      </div>
+                {dividendsLoading ? (
+                  // Skeleton
+                  Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
+                ) : dividendsError ? (
+                  <p className="text-xs text-red-400 text-center py-4">فشل تحميل البيانات</p>
+                ) : dividendsData.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">لا توجد توزيعات قريبة</p>
+                ) : (
+                  dividendsData.map((c) => (
+                    <div key={c.ticker} className="flex items-center gap-2">
+                      {/* Logo */}
                       <CompanyLogo ticker={c.ticker} />
+                      {/* Ticker + Name — grows to fill space */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-800 dark:text-white leading-tight">{c.ticker}</p>
+                        <p className="text-xs text-slate-400 truncate leading-tight">{c.name}</p>
+                      </div>
+                      {/* Dividend + Ex-Date — fixed, left-aligned */}
+                      <div className="text-left shrink-0">
+                        <p className="text-sm font-bold text-green-600 dark:text-green-400 leading-tight">${c.dividend}</p>
+                        <p className="text-xs text-slate-400 leading-tight">{c.exDate}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
