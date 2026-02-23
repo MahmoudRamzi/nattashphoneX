@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer
 } from 'recharts';
 import {
@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import QafahLogo from '@/components/Qafah_logo';
 import type { Last6DaysResponse, EmojiDay } from '@/types/message';
+
+const API_BASE = 'https://app.qafah.com';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface UptrendRecord {
@@ -34,22 +36,22 @@ const WINDOW_MAP: Record<string, number> = {
 
 // ─── Static data ──────────────────────────────────────────────────────────────
 const myListCompanies = [
-  { index: 1, symbol: 'AAPL', name: 'Apple',     logo: '🍎', signal: 'accumulation', change:  2.45 },
-  { index: 2, symbol: 'NVDA', name: 'NVIDIA',    logo: '🎮', signal: 'accumulation', change:  3.21 },
-  { index: 3, symbol: 'META', name: 'Meta',      logo: '👥', signal: 'distribution', change: -1.23 },
-  { index: 4, symbol: 'MSFT', name: 'Microsoft', logo: '💻', signal: 'accumulation', change:  1.67 },
-  { index: 5, symbol: 'AMD',  name: 'AMD',       logo: '🔷', signal: 'distribution', change: -2.84 },
-  { index: 6, symbol: 'AMZN', name: 'Amazon',    logo: '📦', signal: 'accumulation', change:  1.89 },
+  { index: 1, symbol: 'AAPL', name: 'Apple',     ticker: 'AAPL', signal: 'accumulation', change:  2.45 },
+  { index: 2, symbol: 'NVDA', name: 'NVIDIA',    ticker: 'NVDA', signal: 'accumulation', change:  3.21 },
+  { index: 3, symbol: 'META', name: 'Meta',      ticker: 'META', signal: 'distribution', change: -1.23 },
+  { index: 4, symbol: 'MSFT', name: 'Microsoft', ticker: 'MSFT', signal: 'accumulation', change:  1.67 },
+  { index: 5, symbol: 'AMD',  name: 'AMD',       ticker: 'AMD',  signal: 'distribution', change: -2.84 },
+  { index: 6, symbol: 'AMZN', name: 'Amazon',    ticker: 'AMZN', signal: 'accumulation', change:  1.89 },
 ];
 
 const earningsCompanies = [
-  { ticker: 'ADBE', name: 'Adobe',      logo: '🎨', change:  5.82, time: 'بعد الإغلاق' },
-  { ticker: 'CRM',  name: 'Salesforce', logo: '☁️', change:  3.45, time: 'بعد الإغلاق' },
+  { ticker: 'ADBE', name: 'Adobe',      change:  5.82, time: 'بعد الإغلاق' },
+  { ticker: 'CRM',  name: 'Salesforce', change:  3.45, time: 'بعد الإغلاق' },
 ];
 
 const dividendCompanies = [
-  { ticker: 'AAPL', name: 'Apple',     logo: '🍎', dividend: 0.26, exDate: '09 فبراير' },
-  { ticker: 'MSFT', name: 'Microsoft', logo: '💻', dividend: 0.83, exDate: '20 فبراير' },
+  { ticker: 'AAPL', name: 'Apple',     dividend: 0.26, exDate: '09 فبراير' },
+  { ticker: 'MSFT', name: 'Microsoft', dividend: 0.83, exDate: '20 فبراير' },
 ];
 
 const alertsData = [
@@ -68,21 +70,56 @@ interface UserDashboardProps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Image-based indicators
 const UpTriangle = () => (
-  <svg width="10" height="10" viewBox="0 0 10 10">
-    <polygon points="5,0 10,10 0,10" fill="#22c55e" />
-  </svg>
+  <img src="data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='24' height='24' rx='8' fill='%2322c55e'/%3E%3Cpath d='M12 7L18 16H6L12 7Z' fill='white'/%3E%3C/svg%3E" alt="up" className="w-6 h-6" />
 );
 const DownTriangle = () => (
-  <svg width="10" height="10" viewBox="0 0 10 10">
-    <polygon points="0,0 10,0 5,10" fill="#ef4444" />
-  </svg>
+  <img src="data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='24' height='24' rx='8' fill='%23ef4444'/%3E%3Cpath d='M12 17L6 8H18L12 17Z' fill='white'/%3E%3C/svg%3E" alt="down" className="w-6 h-6" />
 );
 const NeutralCircle = () => (
   <svg width="10" height="10" viewBox="0 0 10 10">
     <circle cx="5" cy="5" r="4" fill="#94a3b8" />
   </svg>
 );
+
+// Helper to get last 6 days with Arabic names
+const getLast6DaysWithNames = (data: EmojiDay[]): { day: EmojiDay; dateObj: Date; arName: string }[] => {
+  const arNames = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
+  const today = new Date();
+  
+  return data.map((day, idx) => {
+    const daysAgo = data.length - 1 - idx;
+    const dateObj = new Date(today);
+    dateObj.setDate(dateObj.getDate() - daysAgo);
+    const dayOfWeek = dateObj.getDay();
+    const arName = arNames[dayOfWeek];
+    
+    return { day, dateObj, arName };
+  });
+};
+
+// Logo component with fallback
+const CompanyLogo = ({ ticker }: { ticker: string }) => {
+  const [error, setError] = useState(false);
+  
+  if (error) {
+    return (
+      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg font-bold text-slate-600">
+        {ticker.charAt(0)}
+      </div>
+    );
+  }
+  
+  return (
+    <img
+      src={`${API_BASE}/static/logos_tickers/${ticker}.png`}
+      alt={ticker}
+      className="w-8 h-8 rounded-xl object-cover"
+      onError={() => setError(true)}
+    />
+  );
+};
 
 const formatXAxis = (dateStr: string) => {
   if (!dateStr) return '';
@@ -182,6 +219,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
   const [activePeriod, setActivePeriod]   = useState('نطاق قريب');
   const [isDark, setIsDark]               = useState(false);
   const [expandedMenus, setExpandedMenus] = useState(['portfolio', 'education']);
+  const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({});
 
   const [rawData, setRawData]   = useState<UptrendRecord[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -317,7 +355,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
           </button>
         </div>
-        <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">👋 أهلاً، أحمد</span>
+        <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">👋 أهلاً، حسن</span>
         <div className="w-24" />
       </div>
 
@@ -407,7 +445,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 </div>
               </div>
 
-              {/* Recharts */}
+              {/* Recharts AreaChart */}
               <div className="h-64 w-full">
                 {loading ? (
                   <div className="h-full flex items-center justify-center">
@@ -419,7 +457,22 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                   <div className="h-full flex items-center justify-center text-xs text-slate-400">لا توجد بيانات للنطاق المحدد</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={rechartsData} margin={{ top: 10, right: 16, left: 0, bottom: 20 }}>
+                    <AreaChart 
+                      data={rechartsData} 
+                      margin={{ top: 20, right: 16, left: 0, bottom: 20 }}
+                      onContextMenu={(_, e) => e.preventDefault()}
+                    >
+                      <defs>
+                        <linearGradient id="colorQL" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorHigh" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+
                       <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
 
                       <XAxis
@@ -445,37 +498,43 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                         cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }}
                       />
 
-                      <Line
-                        type="stepAfter"
-                        dataKey={hKey}
-                        stroke="#22c55e"
-                        strokeWidth={2}
-                        strokeDasharray="7 4"
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-
-                      <Line
-                        type="stepAfter"
-                        dataKey={lKey}
-                        stroke="#22c55e"
-                        strokeWidth={2}
-                        strokeDasharray="7 4"
-                        strokeOpacity={0.55}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-
-                      <Line
-                        type="linear"
+                      {/* Main area - QL value */}
+                      <Area
+                        type="monotone"
                         dataKey="QL"
                         stroke="#3b82f6"
                         strokeWidth={2}
-                        dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }}
-                        activeDot={{ r: 5, fill: '#3b82f6' }}
+                        fillOpacity={1}
+                        fill="url(#colorQL)"
                         isAnimationActive={false}
+                        dot={false}
                       />
-                    </LineChart>
+
+                      {/* High range area */}
+                      <Area
+                        type="stepAfter"
+                        dataKey={hKey}
+                        stroke="#22c55e"
+                        strokeWidth={1.5}
+                        strokeDasharray="7 4"
+                        fill="none"
+                        isAnimationActive={false}
+                        dot={false}
+                      />
+
+                      {/* Low range area */}
+                      <Area
+                        type="stepAfter"
+                        dataKey={lKey}
+                        stroke="#22c55e"
+                        strokeWidth={1.5}
+                        strokeDasharray="7 4"
+                        strokeOpacity={0.55}
+                        fill="none"
+                        isAnimationActive={false}
+                        dot={false}
+                      />
+                    </AreaChart>
                   </ResponsiveContainer>
                 )}
               </div>
@@ -485,34 +544,27 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 <ChartLegend windowIndex={windowIndex} hKey={hKey} lKey={lKey} />
               )}
 
-              {/* Last 6 days */}
-              <div className="mt-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">آخر 6 أيام</p>
+              {/* Last 6 days - stretched */}
+              <div className="mt-6">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">آخر 6 أيام</p>
                 {last6Loading ? (
-                  <div className="flex items-center justify-center h-12">
+                  <div className="flex items-center justify-center h-16">
                     <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
                   </div>
                 ) : last6Days.length === 0 ? (
                   <div className="text-xs text-slate-400">لا توجد بيانات</div>
                 ) : (
-                  <div className="flex gap-2">
-                    {last6Days.map((day, i) => (
-                      <div key={i} className="flex flex-col items-center gap-1">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${
-                          day.direction === 'up' 
-                            ? 'bg-green-50 dark:bg-green-900/30' 
-                            : day.direction === 'down'
-                            ? 'bg-red-50 dark:bg-red-900/30'
-                            : 'bg-slate-50 dark:bg-slate-700/30'
-                        }`}>
-                          {day.direction === 'up' ? (
-                            <UpTriangle />
-                          ) : day.direction === 'down' ? (
-                            <DownTriangle />
-                          ) : (
-                            <NeutralCircle />
-                          )}
-                        </div>
+                  <div className="flex gap-2 justify-between w-full">
+                    {getLast6DaysWithNames(last6Days).map((item, i) => (
+                      <div key={i} className="flex flex-col items-center gap-2 flex-1">
+                        {item.day.direction === 'up' ? (
+                          <UpTriangle />
+                        ) : item.day.direction === 'down' ? (
+                          <DownTriangle />
+                        ) : (
+                          <NeutralCircle />
+                        )}
+                        <p className="text-xs text-slate-600 dark:text-slate-400 font-medium text-center">{item.arName}</p>
                       </div>
                     ))}
                   </div>
@@ -535,7 +587,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.name}</p>
                         <p className="text-xs text-slate-400">{c.symbol}</p>
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">{c.logo}</div>
+                      <CompanyLogo ticker={c.ticker} />
                       <span className="text-xs text-slate-300 dark:text-slate-600 w-4 text-center">{c.index}</span>
                     </div>
                   </div>
@@ -567,7 +619,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.ticker}</p>
                         <p className="text-xs text-slate-400">{c.name}</p>
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">{c.logo}</div>
+                      <CompanyLogo ticker={c.ticker} />
                     </div>
                   </div>
                 ))}
@@ -592,7 +644,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.ticker}</p>
                         <p className="text-xs text-slate-400">{c.name}</p>
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-lg">{c.logo}</div>
+                      <CompanyLogo ticker={c.ticker} />
                     </div>
                   </div>
                 ))}
