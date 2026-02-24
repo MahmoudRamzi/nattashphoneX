@@ -9,25 +9,51 @@ import {
 } from 'lucide-react';
 
 /* ─── types ─────────────────────────────────────────────────────────── */
-interface CompanyData {
-  ticker: string;
-  signal: 'accumulation' | 'distribution';
-  level: string;        // "MAJOR" | "MEDIUM" | "LOW"
-  volume: string;       // e.g. "45.2M"
-  volumeType: 'high' | 'normal';
-  dailyDirection: number;
-  loadDiff1d: number;
-  hittingDays: number;
-  perf5d: number;
-  perf10d: number;
-  category: 'continuous' | 'sub' | 'change';
+
+/**
+ * Raw row from GET /api/ticker_resell_signals
+ * (only the fields we actually consume)
+ */
+interface RawRow {
+  holding_ticker: string;
+  date: string;
+  load: number;
+  load_level_state: 'accumulation' | 'distribution' | 'pre-accumulation' | 'pre-distribution' | 'neutral';
+  level_type: 'continuous' | 'secondary_change' | 'direction_change' | 'none';
+  DiffCategory_1d: string;
+  load_direction: number;
+  LoadChangePerc_5d: string;
+  LoadChangePerc_3d: string;
+  high_3: number;
+  low_3: number;
+  high_4: number;
+  low_4: number;
+  close: number;
+  resell_signal_4: boolean;
+  resell_counter_4: number;
+  resell_internal_signal_4: boolean;
+  resell_internal_4: number;
 }
 
-interface SignalsPayload {
-  continuous: CompanyData[];
-  sub:        CompanyData[];
-  change:     CompanyData[];
-  date:       string;
+interface CompanyData {
+  ticker: string;
+  signal: 'accumulation' | 'distribution' | 'pre-accumulation' | 'pre-distribution' | 'neutral';
+  levelType: 'continuous' | 'secondary_change' | 'direction_change' | 'none';
+  diffCategory: string;
+  load: number;
+  loadDirection: number;
+  perf5d: string;
+  perf3d: string;
+  date: string;
+}
+
+interface HistoryRow {
+  date: string;
+  direction: number;
+  load: number;
+  level: string;
+  perf5d: string;
+  perf3d: string;
 }
 
 interface SignalPoint { date: string; weight: number; level: number }
@@ -45,22 +71,114 @@ interface ChartPayload {
   };
 }
 
-interface HistoryRow {
-  date: string; direction: number; loadDiff: number;
-  level: string; hittingDays: number; perf5d: number; perf10d: number;
-}
-
 interface StockStats {
-  bidVolume:  string;
-  askVolume:  string;
-  netFlow:    string;
+  bidVolume: string;
+  askVolume: string;
+  netFlow: string;
   loading: boolean;
 }
+
+/* ─── mappings ───────────────────────────────────────────────────────── */
+
+const LEVEL_TYPE_MAP: Record<string, { label: string; cat: 'continuous' | 'sub' | 'change' | 'none' }> = {
+  continuous:       { label: 'استمراري',     cat: 'continuous' },
+  secondary_change: { label: 'فرعي',          cat: 'sub'        },
+  direction_change: { label: 'تغيير اتجاه',  cat: 'change'     },
+  none:             { label: '—',             cat: 'none'       },
+};
+
+const SIGNAL_MAP: Record<string, { label: string; isAccum: boolean }> = {
+  accumulation:     { label: 'تجميع',          isAccum: true  },
+  distribution:     { label: 'تصريف',          isAccum: false },
+  'pre-accumulation': { label: 'قبل تجميع',   isAccum: true  },
+  'pre-distribution': { label: 'قبل تصريف',   isAccum: false },
+  neutral:          { label: 'محايد',          isAccum: true  },
+};
 
 /* ─── config ─────────────────────────────────────────────────────────── */
 const API_BASE = 'https://app.qafah.com';
 
-/* ─── Ticker logo  (static file at /{ticker}.png) ───────────────────── */
+/* ─── helpers ────────────────────────────────────────────────────────── */
+
+/** Build company list + history rows from raw API rows for a given tab category */
+function processRows(rows: RawRow[]): {
+  byCategory: Record<'continuous' | 'sub' | 'change', CompanyData[]>;
+  latestDate: string;
+  historyFor: (ticker: string) => HistoryRow[];
+} {
+  // sort by date asc
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+
+  // latest date
+  const latestDate = sorted.length ? sorted[sorted.length - 1].date.slice(0, 10) : '—';
+
+  // group by ticker → history
+  const byTicker: Record<string, RawRow[]> = {};
+  for (const row of sorted) {
+    if (!byTicker[row.holding_ticker]) byTicker[row.holding_ticker] = [];
+    byTicker[row.holding_ticker].push(row);
+  }
+
+  const historyFor = (ticker: string): HistoryRow[] => {
+    const rows = byTicker[ticker] ?? [];
+    return [...rows]
+      .reverse()
+      .slice(0, 30)
+      .map(r => ({
+        date:      r.date.slice(0, 10),
+        direction: r.load_direction,
+        load:      r.load,
+        level:     r.DiffCategory_1d,
+        perf5d:    r.LoadChangePerc_5d,
+        perf3d:    r.LoadChangePerc_3d,
+      }));
+  };
+
+  // latest row per ticker
+  const latestByTicker: Record<string, RawRow> = {};
+  for (const row of sorted) {
+    latestByTicker[row.holding_ticker] = row;
+  }
+
+  const byCategory: Record<'continuous' | 'sub' | 'change', CompanyData[]> = {
+    continuous: [],
+    sub: [],
+    change: [],
+  };
+
+  for (const [ticker, row] of Object.entries(latestByTicker)) {
+    const lt = LEVEL_TYPE_MAP[row.level_type] ?? LEVEL_TYPE_MAP['none'];
+    if (lt.cat === 'none') continue;
+
+    const company: CompanyData = {
+      ticker,
+      signal:        row.load_level_state,
+      levelType:     row.level_type as any,
+      diffCategory:  row.DiffCategory_1d,
+      load:          row.load,
+      loadDirection: row.load_direction,
+      perf5d:        row.LoadChangePerc_5d,
+      perf3d:        row.LoadChangePerc_3d,
+      date:          row.date.slice(0, 10),
+    };
+
+    byCategory[lt.cat].push(company);
+  }
+
+  // sort each bucket: accumulation first, then by abs(load_direction) desc
+  // replace the existing sort block
+for (const cat of ['continuous', 'sub', 'change'] as const) {
+  byCategory[cat].sort((a, b) => {
+    const absDiff = Math.abs(b.loadDirection) - Math.abs(a.loadDirection);
+    if (absDiff !== 0) return absDiff;
+    return a.ticker.localeCompare(b.ticker);  // name asc as tiebreaker
+  });
+}
+
+  return { byCategory, latestDate, historyFor };
+}
+
+/* ─── Ticker logo ────────────────────────────────────────────────────── */
 function TickerLogo({ ticker, size = 'md' }: { ticker: string; size?: 'sm' | 'md' }) {
   const [err, setErr] = React.useState(false);
   const dim = size === 'sm' ? 'w-10 h-10 rounded-lg text-xs' : 'w-12 h-12 rounded-xl text-sm';
@@ -79,42 +197,30 @@ function TickerLogo({ ticker, size = 'md' }: { ticker: string; size?: 'sm' | 'md
   );
 }
 
-/* ─── useStockStats: fetches real bid/ask/flow/earnings via /api/stock_stats ── */
+/* ─── useStockStats ──────────────────────────────────────────────────── */
 function useStockStats(ticker: string | undefined): StockStats {
   const [stats, setStats] = React.useState<StockStats>({
     bidVolume: '…', askVolume: '…', netFlow: '…', loading: true,
   });
-
   React.useEffect(() => {
     if (!ticker) return;
     setStats(s => ({ ...s, loading: true, bidVolume: '…', askVolume: '…', netFlow: '…' }));
     fetch(`${API_BASE}/api/stock_stats/${encodeURIComponent(ticker)}`)
       .then(r => r.json())
       .then((d: { bid_volume: string; ask_volume: string; net_flow: string }) => {
-        setStats({
-          bidVolume: d.bid_volume ?? '—',
-          askVolume: d.ask_volume ?? '—',
-          netFlow:   d.net_flow   ?? '—',
-          loading: false,
-        });
+        setStats({ bidVolume: d.bid_volume ?? '—', askVolume: d.ask_volume ?? '—', netFlow: d.net_flow ?? '—', loading: false });
       })
-      .catch(() => {
-        setStats({ bidVolume: '—', askVolume: '—', netFlow: '—', loading: false });
-      });
+      .catch(() => setStats({ bidVolume: '—', askVolume: '—', netFlow: '—', loading: false }));
   }, [ticker]);
-
   return stats;
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   PlotlyChart  –  fetches /api/chart/{ticker} and renders via Plotly
-   ══════════════════════════════════════════════════════════════════════ */
+/* ─── PlotlyChart ────────────────────────────────────────────────────── */
 function PlotlyChart({ ticker }: { ticker: string }) {
   const divRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [errMsg, setErrMsg] = useState('');
 
-  /* inject Plotly CDN once */
   useEffect(() => {
     if (document.getElementById('plotly-cdn')) return;
     const s = document.createElement('script');
@@ -127,104 +233,64 @@ function PlotlyChart({ ticker }: { ticker: string }) {
     if (!t) return;
     setStatus('loading');
     setErrMsg('');
-
-    const PlotlyGlobal = (window as any).Plotly; // eslint-disable-line
+    const PlotlyGlobal = (window as any).Plotly;
     if (PlotlyGlobal && divRef.current) PlotlyGlobal.purge(divRef.current);
 
     let waited = 0;
-    while (!(window as unknown as Record<string, unknown>).Plotly && waited < 6000) {
+    while (!(window as any).Plotly && waited < 6000) {
       await new Promise(r => setTimeout(r, 200));
       waited += 200;
     }
-    const Plotly = (window as unknown as Record<string, unknown>).Plotly as
-      Record<string, (...args: unknown[]) => void> | undefined;
-    if (!Plotly) { setErrMsg('Plotly CDN failed to load – check network'); setStatus('error'); return; }
+    const Plotly = (window as any).Plotly;
+    if (!Plotly) { setErrMsg('Plotly CDN failed to load'); setStatus('error'); return; }
 
     try {
-      const url = `${API_BASE}/api/chart/${encodeURIComponent(t)}`;
-      const res = await fetch(url);
+      const res = await fetch(`${API_BASE}/api/chart/${encodeURIComponent(t)}`);
       const raw = await res.text();
-
-      if (!res.ok) {
-        let detail = `HTTP ${res.status} ${res.statusText}`;
-        try {
-          const json = JSON.parse(raw);
-          if (json.detail) detail = `${res.status}: ${json.detail}`;
-        } catch {
-          const snippet = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 250);
-          detail = `${res.status} – got HTML not JSON. Snippet: "${snippet}"\n\nFix: check API_BASE, app.include_router(), and uvicorn logs.`;
-        }
-        throw new Error(detail);
-      }
-
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d: ChartPayload = JSON.parse(raw);
 
       const traces = [
-        // ── 1. Load (weight) line
-        { x: d.dates, y: d.weight,
-          name: 'Load', type: 'scatter', mode: 'lines',
-          line: { color: '#2c3e50', width: 2.5 } },
-        // ── 2. High (Window 3)
-        { x: d.dates, y: d.high_3,
-          name: 'High (Window 3)', type: 'scatter', mode: 'lines',
-          line: { color: '#95a5a6', width: 1.5, dash: 'dot' } },
-        // ── 3. Low (Window 3)
-        { x: d.dates, y: d.low_3,
-          name: 'Low (Window 3)', type: 'scatter', mode: 'lines',
-          line: { color: '#95a5a6', width: 1.5, dash: 'dot' } },
-        // ── 4. Positive Real Level (W4)
-        { x: d.signals.positive_real.map(s => s.date),
-          y: d.signals.positive_real.map(s => s.weight),
-          text: d.signals.positive_real.map(s => String(s.level)),
-          name: 'Positive Real Level (W4)', type: 'scatter', mode: 'markers+text',
-          textposition: 'top center',
-          marker: { size: 14, color: 'rgba(0, 255, 136, 0.3)', symbol: 'diamond', line: { width: 2, color: '#00cc70' } },
-          textfont: { size: 13, color: '#00cc70', family: 'JetBrains Mono, monospace' },
-          hovertemplate: 'Date: %{x}<br>Load: %{y:.4f}<br>Real Level: %{text}<extra></extra>' },
-        // ── 5. Negative Real Level (W4)
-        { x: d.signals.negative_real.map(s => s.date),
-          y: d.signals.negative_real.map(s => s.weight),
-          text: d.signals.negative_real.map(s => String(s.level)),
-          name: 'Negative Real Level (W4)', type: 'scatter', mode: 'markers+text',
-          textposition: 'top center',
-          marker: { size: 14, color: 'rgba(255, 68, 102, 0.3)', symbol: 'diamond', line: { width: 2, color: '#e63946' } },
-          textfont: { size: 13, color: '#e63946', family: 'JetBrains Mono, monospace' },
-          hovertemplate: 'Date: %{x}<br>Load: %{y:.4f}<br>Real Level: %{text}<extra></extra>' },
-        // ── 6. Positive Internal Level (W4)
-        { x: d.signals.positive_internal.map(s => s.date),
-          y: d.signals.positive_internal.map(s => s.weight),
-          text: d.signals.positive_internal.map(s => String(s.level)),
-          name: 'Positive Internal Level (W4)', type: 'scatter', mode: 'markers+text',
-          textposition: 'bottom center',
-          marker: { size: 11, color: 'rgba(0, 212, 255, 0.3)', symbol: 'circle', line: { width: 2, color: '#0096c7' } },
-          textfont: { size: 12, color: '#0096c7', family: 'JetBrains Mono, monospace' },
-          hovertemplate: 'Date: %{x}<br>Load: %{y:.4f}<br>Internal Level: %{text}<extra></extra>' },
-        // ── 7. Negative Internal Level (W4)
-        { x: d.signals.negative_internal.map(s => s.date),
-          y: d.signals.negative_internal.map(s => s.weight),
-          text: d.signals.negative_internal.map(s => String(s.level)),
-          name: 'Negative Internal Level (W4)', type: 'scatter', mode: 'markers+text',
-          textposition: 'bottom center',
-          marker: { size: 11, color: 'rgba(255, 149, 0, 0.3)', symbol: 'circle', line: { width: 2, color: '#d97706' } },
-          textfont: { size: 12, color: '#d97706', family: 'JetBrains Mono, monospace' },
-          hovertemplate: 'Date: %{x}<br>Load: %{y:.4f}<br>Internal Level: %{text}<extra></extra>' },
+        { x: d.dates, y: d.weight, name: 'Load', type: 'scatter', mode: 'lines', line: { color: '#2c3e50', width: 2.5 } },
+        { x: d.dates, y: d.high_3, name: 'High (W3)', type: 'scatter', mode: 'lines', line: { color: '#95a5a6', width: 1.5, dash: 'dot' } },
+        { x: d.dates, y: d.low_3,  name: 'Low (W3)',  type: 'scatter', mode: 'lines', line: { color: '#95a5a6', width: 1.5, dash: 'dot' } },
+        {
+          x: d.signals.positive_real.map(s => s.date), y: d.signals.positive_real.map(s => s.weight),
+          text: d.signals.positive_real.map(s => String(s.level)), name: 'Positive Real (W4)',
+          type: 'scatter', mode: 'markers+text', textposition: 'top center',
+          marker: { size: 14, color: 'rgba(0,255,136,0.3)', symbol: 'diamond', line: { width: 2, color: '#00cc70' } },
+          textfont: { size: 13, color: '#00cc70', family: 'monospace' },
+        },
+        {
+          x: d.signals.negative_real.map(s => s.date), y: d.signals.negative_real.map(s => s.weight),
+          text: d.signals.negative_real.map(s => String(s.level)), name: 'Negative Real (W4)',
+          type: 'scatter', mode: 'markers+text', textposition: 'top center',
+          marker: { size: 14, color: 'rgba(255,68,102,0.3)', symbol: 'diamond', line: { width: 2, color: '#e63946' } },
+          textfont: { size: 13, color: '#e63946', family: 'monospace' },
+        },
+        {
+          x: d.signals.positive_internal.map(s => s.date), y: d.signals.positive_internal.map(s => s.weight),
+          text: d.signals.positive_internal.map(s => String(s.level)), name: 'Positive Internal (W4)',
+          type: 'scatter', mode: 'markers+text', textposition: 'bottom center',
+          marker: { size: 11, color: 'rgba(0,212,255,0.3)', symbol: 'circle', line: { width: 2, color: '#0096c7' } },
+          textfont: { size: 12, color: '#0096c7', family: 'monospace' },
+        },
+        {
+          x: d.signals.negative_internal.map(s => s.date), y: d.signals.negative_internal.map(s => s.weight),
+          text: d.signals.negative_internal.map(s => String(s.level)), name: 'Negative Internal (W4)',
+          type: 'scatter', mode: 'markers+text', textposition: 'bottom center',
+          marker: { size: 11, color: 'rgba(255,149,0,0.3)', symbol: 'circle', line: { width: 2, color: '#d97706' } },
+          textfont: { size: 12, color: '#d97706', family: 'monospace' },
+        },
       ];
 
       const layout = {
         margin: { t: 20, b: 130, l: 60, r: 20 },
-        xaxis: { title: 'Date', gridcolor: 'rgba(0, 0, 0, 0.1)', color: '#1e293b' },
-        yaxis: { title: '',     gridcolor: 'rgba(0, 0, 0, 0.1)', color: '#1e293b' },
-        hovermode: 'x unified',
-        showlegend: true,
-        legend: {
-          orientation: 'h', x: 0, y: -0.28,
-          xanchor: 'left', yanchor: 'top',
-          font: { size: 11, color: '#1e293b' },
-          bgcolor: 'rgba(255,255,255,0)', borderwidth: 0,
-        },
-        paper_bgcolor: '#ffffff',
-        plot_bgcolor: '#f8fafc',
-        height: 520,
+        xaxis: { title: 'Date', gridcolor: 'rgba(0,0,0,0.1)', color: '#1e293b' },
+        yaxis: { title: '',     gridcolor: 'rgba(0,0,0,0.1)', color: '#1e293b' },
+        hovermode: 'x unified', showlegend: true,
+        legend: { orientation: 'h', x: 0, y: -0.28, xanchor: 'left', yanchor: 'top', font: { size: 11, color: '#1e293b' }, bgcolor: 'rgba(255,255,255,0)', borderwidth: 0 },
+        paper_bgcolor: '#ffffff', plot_bgcolor: '#f8fafc', height: 520,
       };
 
       Plotly.react(divRef.current, traces, layout, { responsive: true });
@@ -248,12 +314,8 @@ function PlotlyChart({ ticker }: { ticker: string }) {
       {status === 'error' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50/95 rounded-xl z-10 p-5 overflow-auto">
           <AlertCircle className="w-10 h-10 text-red-400 shrink-0" />
-          <pre className="text-xs text-red-500 font-mono whitespace-pre-wrap text-center max-w-full break-words">
-            {errMsg}
-          </pre>
-          <button onClick={() => drawChart(ticker)} className="text-xs underline text-slate-500 hover:text-slate-800 mt-1">
-            إعادة المحاولة
-          </button>
+          <pre className="text-xs text-red-500 font-mono whitespace-pre-wrap text-center max-w-full break-words">{errMsg}</pre>
+          <button onClick={() => drawChart(ticker)} className="text-xs underline text-slate-500 hover:text-slate-800 mt-1">إعادة المحاولة</button>
         </div>
       )}
       <div ref={divRef} />
@@ -261,18 +323,29 @@ function PlotlyChart({ ticker }: { ticker: string }) {
   );
 }
 
-/* ─── helper badges ───────────────────────────────────────────────────── */
-const SignalBadge = ({ signal }: { signal: string }) =>
-  signal === 'accumulation'
-    ? <Badge className="bg-emerald-500 text-white border-0 text-xs"><TrendingUp className="w-3 h-3 ml-1" />تجميع</Badge>
-    : <Badge className="bg-red-500 text-white border-0 text-xs"><TrendingDown className="w-3 h-3 ml-1" />تصريف</Badge>;
+/* ─── Badges ─────────────────────────────────────────────────────────── */
+const SignalBadge = ({ signal }: { signal: string }) => {
+  const m = SIGNAL_MAP[signal] ?? SIGNAL_MAP['neutral'];
+  return m.isAccum
+    ? <Badge className="bg-emerald-500 text-white border-0 text-xs"><TrendingUp className="w-3 h-3 ml-1" />{m.label}</Badge>
+    : <Badge className="bg-red-500 text-white border-0 text-xs"><TrendingDown className="w-3 h-3 ml-1" />{m.label}</Badge>;
+};
 
-const VolumeBadge = ({ volumeType }: { volumeType: string }) =>
-  volumeType === 'high'
-    ? <Badge className="bg-purple-100 text-purple-700 text-xs">عالي</Badge>
-    : <Badge className="bg-slate-100 text-slate-600 text-xs">طبيعي</Badge>;
+const LevelTypeBadge = ({ levelType }: { levelType: string }) => {
+  const colors: Record<string, string> = {
+    continuous:       'bg-purple-100 text-purple-700',
+    secondary_change: 'bg-blue-100 text-blue-700',
+    direction_change: 'bg-orange-100 text-orange-700',
+    none:             'bg-slate-100 text-slate-500',
+  };
+  return (
+    <Badge className={`text-xs ${colors[levelType] ?? colors['none']}`}>
+      {LEVEL_TYPE_MAP[levelType]?.label ?? '—'}
+    </Badge>
+  );
+};
 
-/* ─── History table ──────────────────────────────────────────────────── */
+/* ─── HistoryTable ───────────────────────────────────────────────────── */
 function HistoryTable({ rows }: { rows: HistoryRow[] }) {
   if (!rows.length) return (
     <p className="text-slate-400 text-sm text-center py-6">لا توجد بيانات سابقة</p>
@@ -282,7 +355,7 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-slate-50 rounded-lg">
-            {['التاريخ', 'الاتجاه', 'الحمل', 'المستوى', 'أيام', '5 أيام', '10 أيام'].map(h => (
+            {['التاريخ', 'الاتجاه', 'الحمل', 'المستوى', '5 أيام', '3 أيام'].map(h => (
               <th key={h} className="text-right py-2.5 px-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">{h}</th>
             ))}
           </tr>
@@ -290,24 +363,39 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
         <tbody className="divide-y divide-slate-100">
           {rows.map((row, i) => (
             <tr key={i} className="hover:bg-slate-50 transition-colors">
+              {/* التاريخ */}
               <td className="py-2.5 px-3 text-slate-700 font-mono text-xs">{row.date}</td>
+
+              {/* الاتجاه — load_direction */}
               <td className="py-2.5 px-3">
-                <span className={`inline-flex items-center gap-1 font-semibold ${row.direction > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {row.direction > 0 ? '↑' : '↓'} {row.direction > 0 ? '+' : ''}{row.direction}
+                <span className={`inline-flex items-center gap-1 font-semibold ${row.direction > 0 ? 'text-emerald-600' : row.direction < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                  {row.direction > 0 ? '↑' : row.direction < 0 ? '↓' : '—'}{' '}
+                  {row.direction !== 0 ? (row.direction > 0 ? `+${row.direction}` : row.direction) : '0'}
                 </span>
               </td>
-              <td className={`py-2.5 px-3 font-medium ${row.loadDiff >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {row.loadDiff >= 0 ? '+' : ''}{row.loadDiff.toFixed(2)}%
+
+              {/* الحمل — load (raw float) */}
+              <td className="py-2.5 px-3 font-mono text-xs text-slate-700">
+                {typeof row.load === 'number' ? row.load.toFixed(4) : row.load}
               </td>
+
+              {/* المستوى — DiffCategory_1d */}
               <td className="py-2.5 px-3">
                 <Badge className="bg-slate-100 text-slate-600 text-xs font-mono">{row.level}</Badge>
               </td>
-              <td className="py-2.5 px-3 text-slate-600 text-xs">{row.hittingDays}</td>
-              <td className={`py-2.5 px-3 font-medium ${row.perf5d >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {row.perf5d >= 0 ? '+' : ''}{row.perf5d.toFixed(2)}%
+
+              {/* 5 أيام — LoadChangePerc_5d (string like "1.23%") */}
+              <td className={`py-2.5 px-3 font-medium text-xs ${
+                row.perf5d?.startsWith('-') ? 'text-red-500' : row.perf5d === 'N/A' ? 'text-slate-400' : 'text-emerald-600'
+              }`}>
+                {row.perf5d === 'N/A' ? '—' : row.perf5d?.startsWith('-') ? row.perf5d : `+${row.perf5d}`}
               </td>
-              <td className={`py-2.5 px-3 font-medium ${row.perf10d >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {row.perf10d >= 0 ? '+' : ''}{row.perf10d.toFixed(2)}%
+
+              {/* 3 أيام — LoadChangePerc_3d */}
+              <td className={`py-2.5 px-3 font-medium text-xs ${
+                row.perf3d?.startsWith('-') ? 'text-red-500' : row.perf3d === 'N/A' ? 'text-slate-400' : 'text-emerald-600'
+              }`}>
+                {row.perf3d === 'N/A' ? '—' : row.perf3d?.startsWith('-') ? row.perf3d : `+${row.perf3d}`}
               </td>
             </tr>
           ))}
@@ -317,16 +405,6 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
   );
 }
 
-/* ─── Mock history data ──────────────────────────────────────────────── */
-const MOCK_HISTORY: HistoryRow[] = [
-  { date: '2026-02-09', direction: -1, loadDiff: -1.92, level: 'MAJOR',  hittingDays: 3, perf5d: 2.29,  perf10d: 9.15 },
-  { date: '2026-02-08', direction:  1, loadDiff:  0.45, level: 'MEDIUM', hittingDays: 2, perf5d: 3.12,  perf10d: 8.92 },
-  { date: '2026-02-07', direction: -1, loadDiff: -0.82, level: 'LOW',    hittingDays: 3, perf5d: 2.85,  perf10d: 8.45 },
-  { date: '2026-02-06', direction:  1, loadDiff:  1.25, level: 'HIGH',   hittingDays: 2, perf5d: 3.45,  perf10d: 7.89 },
-  { date: '2026-02-05', direction:  1, loadDiff:  0.68, level: 'MEDIUM', hittingDays: 1, perf5d: 2.92,  perf10d: 7.12 },
-  { date: '2026-02-04', direction: -1, loadDiff: -1.45, level: 'MAJOR',  hittingDays: 2, perf5d: 2.15,  perf10d: 6.78 },
-];
-
 /* ═══════════════════════════════════════════════════════════════════════
    Main page
    ═══════════════════════════════════════════════════════════════════════ */
@@ -335,56 +413,60 @@ export function CompaniesAccumulationPage() {
   const [selectedCompany,  setSelectedCompany]  = useState<CompanyData | null>(null);
   const [searchQuery,      setSearchQuery]       = useState('');
 
-  // Live data from /api/signals
-  const [signals,     setSignals]     = useState<SignalsPayload | null>(null);
+  // Raw API data
+  const [rawRows,     setRawRows]     = useState<RawRow[]>([]);
   const [sigsLoading, setSigsLoading] = useState(true);
   const [sigsError,   setSigsError]   = useState('');
+  const [latestDate,  setLatestDate]  = useState('…');
 
-  // History rows — static mock data
-  const historyRows: HistoryRow[] = MOCK_HISTORY;
+  // Processed bucketed data
+  const [byCategory,   setByCategory]   = useState<Record<'continuous' | 'sub' | 'change', CompanyData[]>>({ continuous: [], sub: [], change: [] });
+  const [historyFn,    setHistoryFn]    = useState<(t: string) => HistoryRow[]>(() => () => []);
 
-  // Live stock stats (bid/ask volume, net flow, next earnings)
+  // Live stock stats
   const stockStats = useStockStats(selectedCompany?.ticker);
 
-  // ── Fetch /api/signals once on mount ─────────────────────────────────
-  useEffect(() => {
+  // ── Fetch /api/ticker_resell_signals ─────────────────────────────────
+  const fetchSignals = useCallback((mode = 'cached') => {
     setSigsLoading(true);
-    fetch(`${API_BASE}/api/signals`)
-      .then(r => r.text())
-      .then(raw => {
-        try {
-          const data: SignalsPayload = JSON.parse(raw);
-          setSignals(data);
-          // auto-select first company in the default tab
-          const first = data.continuous?.[0] ?? data.sub?.[0] ?? data.change?.[0] ?? null;
-          setSelectedCompany(first ? { ...first, category: 'continuous' } : null);
-        } catch {
-          setSigsError('فشل في تحليل استجابة /api/signals');
-        }
+    setSigsError('');
+    fetch(`${API_BASE}/api/ticker_resell_signals?mode=${mode}`)
+      .then(r => r.json())
+      .then((data: RawRow[]) => {
+        setRawRows(data);
+        const { byCategory: bc, latestDate: ld, historyFor } = processRows(data);
+        setByCategory(bc);
+        setLatestDate(ld);
+        setHistoryFn(() => historyFor);
+        // auto-select first company
+        const first = bc.continuous[0] ?? bc.sub[0] ?? bc.change[0] ?? null;
+        setSelectedCompany(first ?? null);
       })
       .catch(e => setSigsError(String(e)))
       .finally(() => setSigsLoading(false));
   }, []);
 
-  // Auto-select first company when category tab changes
+  useEffect(() => { fetchSignals('cached'); }, [fetchSignals]);
+
+  // Auto-select first company when tab changes
   useEffect(() => {
-    if (!signals) return;
-    const first = signals[selectedCategory]?.[0] ?? null;
-    setSelectedCompany(first ? { ...first, category: selectedCategory } : null);
-  }, [selectedCategory, signals]);
+    const first = byCategory[selectedCategory]?.[0] ?? null;
+    setSelectedCompany(first ?? null);
+  }, [selectedCategory, byCategory]);
 
-  // ── Filtered company list ─────────────────────────────────────────────
-  const allInCategory: CompanyData[] = signals
-    ? (signals[selectedCategory] ?? []).map(c => ({ ...c, category: selectedCategory }))
-    : [];
-
+  // ── Derived ───────────────────────────────────────────────────────────
+  const allInCategory = byCategory[selectedCategory] ?? [];
   const filteredCompanies = allInCategory.filter(c =>
     !searchQuery || c.ticker.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const counts = signals
-    ? { continuous: signals.continuous.length, sub: signals.sub.length, change: signals.change.length }
-    : { continuous: 0, sub: 0, change: 0 };
+  const counts = {
+    continuous: byCategory.continuous.length,
+    sub:        byCategory.sub.length,
+    change:     byCategory.change.length,
+  };
+
+  const historyRows: HistoryRow[] = selectedCompany ? historyFn(selectedCompany.ticker) : [];
 
   const categoryMeta = {
     continuous: { color: 'bg-purple-600', icon: <RefreshCw  className="w-4 h-4 ml-2" />, label: 'استمراري'    },
@@ -405,10 +487,18 @@ export function CompaniesAccumulationPage() {
               </button>
               <span className="text-lg font-bold tracking-tight text-slate-800">قافة</span>
             </div>
-            <div className="flex items-center gap-5 text-sm text-slate-500">
+            <div className="flex items-center gap-4 text-sm text-slate-500">
               <span>فاحص السوق</span>
               <span className="text-slate-300">|</span>
-              <span>آخر تحديث: {signals?.date ?? '…'}</span>
+              <span>آخر تحديث: {latestDate}</span>
+              <button
+                onClick={() => fetchSignals('recalc')}
+                className="flex items-center gap-1.5 text-xs text-purple-600 hover:text-purple-800 border border-purple-200 rounded-lg px-3 py-1.5 hover:bg-purple-50 transition-colors"
+                disabled={sigsLoading}
+              >
+                <RefreshCw className={`w-3 h-3 ${sigsLoading ? 'animate-spin' : ''}`} />
+                تحديث
+              </button>
             </div>
           </div>
         </div>
@@ -446,7 +536,6 @@ export function CompaniesAccumulationPage() {
           </div>
         )}
 
-        {/* ltr wrapper → col-span-2 stays LEFT even inside dir=rtl */}
         <div dir="ltr" className="grid lg:grid-cols-3 gap-6">
 
           {/* ── Left: Chart + History ────────────────────────────────── */}
@@ -462,23 +551,22 @@ export function CompaniesAccumulationPage() {
                       <TickerLogo ticker={selectedCompany.ticker} />
                       <div>
                         <h2 className="text-lg font-bold text-slate-900">{selectedCompany.ticker}</h2>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <SignalBadge signal={selectedCompany.signal} />
-                          <Badge className="bg-slate-100 text-slate-600 text-xs">{selectedCompany.level}</Badge>
-                          <VolumeBadge volumeType={selectedCompany.volumeType} />
-                          <span className="text-xs text-slate-400">{selectedCompany.volume}</span>
+                          <LevelTypeBadge levelType={selectedCompany.levelType} />
+                          <Badge className="bg-slate-100 text-slate-600 text-xs font-mono">{selectedCompany.diffCategory}</Badge>
                         </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className={`text-2xl font-bold ${selectedCompany.loadDiff1d >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {selectedCompany.loadDiff1d >= 0 ? '+' : ''}{selectedCompany.loadDiff1d.toFixed(2)}%
+                      <p className={`text-2xl font-bold ${selectedCompany.loadDirection >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {selectedCompany.loadDirection > 0 ? '+' : ''}{selectedCompany.loadDirection}
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5">تغيير يومي في الحمل</p>
+                      <p className="text-xs text-slate-400 mt-0.5">اتجاه الحمل</p>
+                      <p className="text-sm font-mono text-slate-500 mt-0.5">{selectedCompany.load?.toFixed(4)}</p>
                     </div>
                   </div>
                 ) : (
-                  /* skeleton while loading */
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-slate-200 animate-pulse" />
                     <div className="space-y-2">
@@ -498,7 +586,7 @@ export function CompaniesAccumulationPage() {
                     </div>
                 }
 
-                {/* Live market stats from yfinance */}
+                {/* Live market stats */}
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: 'حجم الشراء',    val: stockStats.bidVolume, bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' },
@@ -507,9 +595,7 @@ export function CompaniesAccumulationPage() {
                   ].map(s => (
                     <div key={s.label} className={`${s.bg} border rounded-xl p-3 text-center`}>
                       <p className="text-xs text-slate-500 mb-1">{s.label}</p>
-                      <p className={`font-bold text-sm ${s.text} ${stockStats.loading ? 'animate-pulse' : ''}`}>
-                        {s.val}
-                      </p>
+                      <p className={`font-bold text-sm ${s.text} ${stockStats.loading ? 'animate-pulse' : ''}`}>{s.val}</p>
                     </div>
                   ))}
                 </div>
@@ -536,8 +622,14 @@ export function CompaniesAccumulationPage() {
                 <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
                   <span className="text-slate-500">📅</span>
                   جدول الكميات السابقة
+                  {selectedCompany && (
+                    <span className="text-sm font-normal text-slate-400 mr-2">— {selectedCompany.ticker}</span>
+                  )}
                 </h3>
-                <HistoryTable rows={historyRows} />
+                {sigsLoading
+                  ? <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}</div>
+                  : <HistoryTable rows={historyRows} />
+                }
               </CardContent>
             </Card>
           </div>
@@ -563,65 +655,77 @@ export function CompaniesAccumulationPage() {
             {/* Scrollable list */}
             <div className="overflow-y-auto flex-1 space-y-2 pl-0.5 pr-0.5" style={{ scrollbarWidth: 'thin' }}>
 
-            {/* Loading skeletons */}
-            {sigsLoading && [1, 2, 3].map(i => (
-              <Card key={i} className="border-slate-100">
-                <CardContent className="p-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-slate-200 animate-pulse shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3 bg-slate-200 rounded animate-pulse w-3/4" />
-                      <div className="h-2 bg-slate-100 rounded animate-pulse w-1/2" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-
-            {/* Company cards */}
-            {!sigsLoading && filteredCompanies.map(company => (
-              <Card
-                key={company.ticker}
-                onClick={() => setSelectedCompany({ ...company, category: selectedCategory })}
-                className={`border-2 cursor-pointer transition-all duration-200 hover:shadow-md ${
-                  selectedCompany?.ticker === company.ticker
-                    ? 'border-purple-500 bg-purple-50 shadow-md'
-                    : company.signal === 'accumulation'
-                      ? 'border-emerald-100 hover:border-emerald-300'
-                      : 'border-red-100 hover:border-red-300'
-                }`}
-              >
-                <CardContent className="p-3.5">
-                  <div className="flex items-start gap-3">
-                    <TickerLogo ticker={company.ticker} size="sm" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-bold text-slate-900 text-sm">{company.ticker}</span>
-                        <SignalBadge signal={company.signal} />
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-                        <Badge className="bg-slate-100 text-slate-600 text-xs">{company.level}</Badge>
-                        <VolumeBadge volumeType={company.volumeType} />
-                        <span className="text-xs text-slate-400">{company.volume}</span>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded-md ${company.perf5d  >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                          5d {company.perf5d  > 0 ? '+' : ''}{company.perf5d.toFixed(1)}%
-                        </span>
-                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded-md ${company.perf10d >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                          10d {company.perf10d > 0 ? '+' : ''}{company.perf10d.toFixed(1)}%
-                        </span>
+              {/* Loading skeletons */}
+              {sigsLoading && [1, 2, 3].map(i => (
+                <Card key={i} className="border-slate-100">
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-slate-200 animate-pulse shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 bg-slate-200 rounded animate-pulse w-3/4" />
+                        <div className="h-2 bg-slate-100 rounded animate-pulse w-1/2" />
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))}
 
-            {!sigsLoading && filteredCompanies.length === 0 && !sigsError && (
-              <div className="text-center text-slate-400 text-sm py-8">لا توجد نتائج</div>
-            )}
-            </div>{/* end scrollable */}
+              {/* Company cards */}
+              {!sigsLoading && filteredCompanies.map(company => {
+                const sigMeta = SIGNAL_MAP[company.signal] ?? SIGNAL_MAP['neutral'];
+                return (
+                  <Card
+                    key={company.ticker}
+                    onClick={() => setSelectedCompany(company)}
+                    className={`border-2 cursor-pointer transition-all duration-200 hover:shadow-md ${
+                      selectedCompany?.ticker === company.ticker
+                        ? 'border-purple-500 bg-purple-50 shadow-md'
+                        : sigMeta.isAccum
+                          ? 'border-emerald-100 hover:border-emerald-300'
+                          : 'border-red-100 hover:border-red-300'
+                    }`}
+                  >
+                    <CardContent className="p-3.5">
+                      <div className="flex items-start gap-3">
+                        <TickerLogo ticker={company.ticker} size="sm" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="font-bold text-slate-900 text-sm">{company.ticker}</span>
+                            <SignalBadge signal={company.signal} />
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                            {/*<LevelTypeBadge levelType={company.levelType} />*/}
+                            <Badge className="bg-slate-100 text-slate-600 text-xs font-mono">{company.diffCategory}</Badge>
+                          </div>
+                          <div className="flex gap-1.5 items-center">
+                            {/* load direction pill */}
+                            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-md font-mono ${
+                              company.loadDirection > 0 ? 'bg-emerald-50 text-emerald-700' : company.loadDirection < 0 ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'
+                            }`}>
+                              {company.loadDirection > 0 ? '+' : ''}{company.loadDirection}
+                            </span>
+                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-md ${
+                              company.perf5d?.startsWith('-') ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'
+                            }`}>
+                              5d {company.perf5d === 'N/A' ? '—' : company.perf5d?.startsWith('-') ? company.perf5d : `+${company.perf5d}`}
+                            </span>
+                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-md ${
+                              company.perf3d?.startsWith('-') ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'
+                            }`}>
+                              3d {company.perf3d === 'N/A' ? '—' : company.perf3d?.startsWith('-') ? company.perf3d : `+${company.perf3d}`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+
+              {!sigsLoading && filteredCompanies.length === 0 && !sigsError && (
+                <div className="text-center text-slate-400 text-sm py-8">لا توجد نتائج</div>
+              )}
+            </div>
           </div>
         </div>
       </main>

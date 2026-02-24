@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer
@@ -6,7 +6,7 @@ import {
 import {
   TrendingUp, TrendingDown, Bell, Moon, Sun, Activity, Star,
   Home, Phone, GraduationCap, ChevronDown, ChevronUp,
-  Settings, PieChart, Loader2
+  Settings, PieChart, Loader2, RefreshCw
 } from 'lucide-react';
 import QafahLogo from '@/components/Qafah_logo';
 import type { Last6DaysResponse, EmojiDay } from '@/types/message';
@@ -27,12 +27,11 @@ interface ApiResponse {
   windows: number[] | string;
 }
 
-// ── NEW: Yahoo Finance types ───────────────────────────────────────────────────
 interface EarningsCompany {
   ticker: string;
   name: string;
   change: number;
-  time: string;             // Arabic label e.g. "بعد الإغلاق"
+  time: string;
   earnings_date: string;
   earnings_date_ar: string;
 }
@@ -48,13 +47,34 @@ interface DividendCompany {
   name: string;
   dividend: number;
   ex_date: string;
-  exDate: string;           // Arabic label e.g. "09 فبراير"
+  exDate: string;
 }
 
 interface DividendsResponse {
   count: number;
   dividends: DividendCompany[];
   updated: string;
+}
+
+// ── NEW: Alerts types ──────────────────────────────────────────────────────────
+interface AlertItem {
+  ticker: string;
+  alert_time: string;
+  cp: string;
+  frame: string;
+  filter: string;
+  target: string | null;
+  tp1: number | null;
+  tp2: number | null;
+  g_5d: boolean;
+  g_10d: boolean;
+  l_5d: boolean;
+  l_10d: boolean;
+}
+
+interface AlertsApiResponse {
+  status: string;
+  data: AlertItem[];
 }
 
 // Arabic label → window INDEX value in record.window
@@ -72,12 +92,6 @@ const myListCompanies = [
   { index: 4, symbol: 'MSFT', name: 'Microsoft', ticker: 'MSFT', signal: 'accumulation', change:  1.67 },
   { index: 5, symbol: 'AMD',  name: 'AMD',       ticker: 'AMD',  signal: 'distribution', change: -2.84 },
   { index: 6, symbol: 'AMZN', name: 'Amazon',    ticker: 'AMZN', signal: 'accumulation', change:  1.89 },
-];
-
-const alertsData = [
-  { id: 1, symbol: 'AAPL', time: '2m ago',  message: 'Broke above resistance at 228.50', icon: TrendingUp },
-  { id: 2, symbol: 'NVDA', time: '5m ago',  message: 'Unusual volume detected (+340%)',  icon: Activity   },
-  { id: 3, symbol: 'META', time: '12m ago', message: 'Distribution pattern forming',     icon: Star       },
 ];
 
 type Page =
@@ -160,6 +174,20 @@ const parseEmojiString = (emojiStr: string): EmojiDay[] => {
   return parsed.reverse();
 };
 
+// ── Format alert time: "12 أغسطس 08:00" ──────────────────────────────────────
+const formatAlertTime = (isoStr: string): { datePart: string; timePart: string } => {
+  try {
+    const d = new Date(isoStr);
+    const day = d.getDate();
+    const month = d.toLocaleDateString('ar-EG', { month: 'long' });
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins  = String(d.getMinutes()).padStart(2, '0');
+    return { datePart: `${day} ${month}`, timePart: `${hours}:${mins}` };
+  } catch {
+    return { datePart: isoStr, timePart: '' };
+  }
+};
+
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label, windowIndex, hKey, lKey }: any) => {
   if (!active || !payload?.length) return null;
@@ -199,7 +227,7 @@ const ChartLegend = ({ windowIndex, hKey, lKey }: { windowIndex: number; hKey: s
   );
 };
 
-// ── Skeleton loader for cards ──────────────────────────────────────────────────
+// ── Skeleton loader ────────────────────────────────────────────────────────────
 const SkeletonRow = () => (
   <div className="flex items-center justify-between animate-pulse">
     <div className="h-8 w-16 bg-slate-100 dark:bg-slate-700 rounded-lg" />
@@ -209,6 +237,31 @@ const SkeletonRow = () => (
     </div>
   </div>
 );
+
+const AlertSkeletonRow = () => (
+  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/50 animate-pulse">
+    <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-600 shrink-0" />
+    <div className="flex-1 space-y-1.5">
+      <div className="flex justify-between">
+        <div className="h-3 w-16 bg-slate-200 dark:bg-slate-600 rounded" />
+        <div className="h-3 w-12 bg-slate-200 dark:bg-slate-600 rounded" />
+      </div>
+      <div className="h-3 w-3/4 bg-slate-200 dark:bg-slate-600 rounded" />
+      <div className="h-3 w-1/2 bg-slate-200 dark:bg-slate-600 rounded" />
+    </div>
+  </div>
+);
+
+// ── Frame badge ────────────────────────────────────────────────────────────────
+const FrameBadge = ({ frame }: { frame: string }) => {
+  // Map numeric frame to readable label
+  const frameLabel = frame ? `${frame}د` : '—';
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] font-bold leading-none shrink-0">
+      {frameLabel}
+    </span>
+  );
+};
 
 // ══════════════════════════════════════════════════════════════════════════════
 export function UserDashboard({ navigate }: UserDashboardProps) {
@@ -223,14 +276,59 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
   const [last6DaysData, setLast6DaysData] = useState<Last6DaysResponse | null>(null);
   const [last6Loading, setLast6Loading]   = useState(true);
 
-  // ── NEW: Live Yahoo Finance state ─────────────────────────────────────────
-  const [earningsData, setEarningsData]     = useState<EarningsCompany[]>([]);
+  const [earningsData, setEarningsData]       = useState<EarningsCompany[]>([]);
   const [earningsLoading, setEarningsLoading] = useState(true);
-  const [earningsError, setEarningsError]   = useState<string | null>(null);
+  const [earningsError, setEarningsError]     = useState<string | null>(null);
 
-  const [dividendsData, setDividendsData]     = useState<DividendCompany[]>([]);
+  const [dividendsData, setDividendsData]       = useState<DividendCompany[]>([]);
   const [dividendsLoading, setDividendsLoading] = useState(true);
-  const [dividendsError, setDividendsError]   = useState<string | null>(null);
+  const [dividendsError, setDividendsError]     = useState<string | null>(null);
+
+  // ── NEW: Live alerts state ────────────────────────────────────────────────
+  const [alertsData, setAlertsData]         = useState<AlertItem[]>([]);
+  const [alertsLoading, setAlertsLoading]   = useState(true);
+  const [alertsError, setAlertsError]       = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed]   = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing]     = useState(false);
+
+  // ── Fetch alerts ──────────────────────────────────────────────────────────
+  const fetchAlerts = useCallback(async (showSpinner = false) => {
+    try {
+      if (showSpinner) setIsRefreshing(true);
+      setAlertsError(null);
+      const res = await fetch(`${API_BASE}/api/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: ['all'],
+          frame: ['all'],
+          filter: ['all'],
+          date_filter: 'all',
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: AlertsApiResponse = await res.json();
+      // Show latest first, limit to 20 for display
+      const sorted = [...(data.data ?? [])].sort(
+        (a, b) => new Date(b.alert_time).getTime() - new Date(a.alert_time).getTime()
+      ).slice(0, 10);
+      setAlertsData(sorted);
+      setLastRefreshed(new Date());
+    } catch (e: any) {
+      console.error('Failed to fetch alerts:', e);
+      setAlertsError(e.message ?? 'Unknown error');
+    } finally {
+      setAlertsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Initial fetch + 1-minute auto-refresh
+  useEffect(() => {
+    fetchAlerts();
+    const interval = setInterval(() => fetchAlerts(true), 60_000);
+    return () => clearInterval(interval);
+  }, [fetchAlerts]);
 
   // ── Fetch uptrend data ────────────────────────────────────────────────────
   useEffect(() => {
@@ -267,7 +365,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
     })();
   }, []);
 
-  // ── NEW: Fetch live earnings from Yahoo Finance ───────────────────────────
+  // ── Fetch earnings ────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -278,7 +376,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
         const data: EarningsResponse = await res.json();
         setEarningsData(data.earnings ?? []);
       } catch (e: any) {
-        console.error('Failed to fetch earnings:', e);
         setEarningsError(e.message ?? 'Unknown error');
       } finally {
         setEarningsLoading(false);
@@ -286,7 +383,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
     })();
   }, []);
 
-  // ── NEW: Fetch live dividends from Yahoo Finance ──────────────────────────
+  // ── Fetch dividends ───────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -297,7 +394,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
         const data: DividendsResponse = await res.json();
         setDividendsData(data.dividends ?? []);
       } catch (e: any) {
-        console.error('Failed to fetch dividends:', e);
         setDividendsError(e.message ?? 'Unknown error');
       } finally {
         setDividendsLoading(false);
@@ -305,7 +401,7 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
     })();
   }, []);
 
-  // ── windowIndex → actual column names ─────────────────────────────────────
+  // ── Window/chart helpers ──────────────────────────────────────────────────
   const windowToKeys = useMemo<Record<number, { hKey: string; lKey: string }>>(() => {
     const map: Record<number, { hKey: string; lKey: string }> = {};
     for (const r of rawData) {
@@ -368,6 +464,11 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
   const tickColor = isDark ? '#94a3b8' : '#64748b';
   const gridColor = isDark ? '#334155' : '#e2e8f0';
 
+  // Format last refreshed time
+  const refreshedLabel = lastRefreshed
+    ? `${String(lastRefreshed.getHours()).padStart(2,'0')}:${String(lastRefreshed.getMinutes()).padStart(2,'0')}`
+    : null;
+
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? 'dark bg-slate-900' : 'bg-slate-50'}`} dir="rtl">
@@ -380,7 +481,9 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
           </button>
           <button className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors relative">
             <Bell className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            {alertsData.length > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            )}
           </button>
         </div>
         <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">👋 أهلاً، حسن</span>
@@ -560,7 +663,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
 
               <div className="flex flex-col gap-3 mt-4">
                 {earningsLoading ? (
-                  // Skeleton
                   Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
                 ) : earningsError ? (
                   <p className="text-xs text-red-400 text-center py-4">فشل تحميل البيانات</p>
@@ -569,14 +671,11 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 ) : (
                   earningsData.map((c) => (
                     <div key={c.ticker} className="flex items-center gap-2">
-                      {/* Logo */}
                       <CompanyLogo ticker={c.ticker} />
-                      {/* Ticker + Name — grows to fill space */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-800 dark:text-white leading-tight">{c.ticker}</p>
                         <p className="text-xs text-slate-400 truncate leading-tight">{c.name}</p>
                       </div>
-                      {/* Change + Date — fixed width, right-aligned */}
                       <div className="text-left shrink-0">
                         <p className={`text-sm font-bold leading-tight ${c.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {c.change >= 0 ? '+' : ''}{c.change}%
@@ -601,7 +700,6 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
 
               <div className="flex flex-col gap-3 mt-4">
                 {dividendsLoading ? (
-                  // Skeleton
                   Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
                 ) : dividendsError ? (
                   <p className="text-xs text-red-400 text-center py-4">فشل تحميل البيانات</p>
@@ -610,14 +708,11 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
                 ) : (
                   dividendsData.map((c) => (
                     <div key={c.ticker} className="flex items-center gap-2">
-                      {/* Logo */}
                       <CompanyLogo ticker={c.ticker} />
-                      {/* Ticker + Name — grows to fill space */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-800 dark:text-white leading-tight">{c.ticker}</p>
                         <p className="text-xs text-slate-400 truncate leading-tight">{c.name}</p>
                       </div>
-                      {/* Dividend + Ex-Date — fixed, left-aligned */}
                       <div className="text-left shrink-0">
                         <p className="text-sm font-bold text-green-600 dark:text-green-400 leading-tight">${c.dividend}</p>
                         <p className="text-xs text-slate-400 leading-tight">{c.exDate}</p>
@@ -628,28 +723,79 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
               </div>
             </div>
 
-            {/* Alerts */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
+            {/* ── LIVE Alerts (from /api/alerts) ───────────────────────── */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex flex-col">
+              {/* Header */}
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full font-semibold">12 جديد</span>
+                <div className="flex items-center gap-2">
+                  {/* Count badge */}
+                  <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full font-semibold">
+                    {alertsLoading ? '…' : `${alertsData.length} إشارة`}
+                  </span>
+                  {/* Manual refresh button */}
+                  <button
+                    onClick={() => fetchAlerts(true)}
+                    disabled={isRefreshing}
+                    className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                    title="تحديث يدوي"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">التنبيهات والإشارات</h3>
               </div>
-              <div className="flex flex-col gap-3 mt-3">
-                {alertsData.map((alert) => {
-                  const Icon = alert.icon;
-                  return (
-                    <div key={alert.id} className="flex items-start gap-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-700/50">
-                      <Icon className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-xs text-slate-400">{alert.time}</span>
-                          <span className="text-xs font-bold text-slate-800 dark:text-white">{alert.symbol}</span>
+
+              {/* Last refreshed timestamp */}
+              {refreshedLabel && (
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 text-left mb-2 leading-none">
+                  آخر تحديث: {refreshedLabel}
+                </p>
+              )}
+
+              {/* Scrollable list */}
+              <div className="flex flex-col gap-2 mt-1 overflow-y-auto max-h-64 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-600">
+                {alertsLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => <AlertSkeletonRow key={i} />)
+                ) : alertsError ? (
+                  <p className="text-xs text-red-400 text-center py-4">فشل تحميل البيانات</p>
+                ) : alertsData.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">لا توجد إشارات</p>
+                ) : (
+                  alertsData.map((alert, idx) => {
+                    const { datePart, timePart } = formatAlertTime(alert.alert_time);
+                    return (
+                      <div
+                        key={`${alert.ticker}-${alert.alert_time}-${idx}`}
+                        className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        {/* Logo */}
+                        <CompanyLogo ticker={alert.ticker} />
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          {/* Row 1: ticker + frame badge + time */}
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-sm font-bold text-slate-800 dark:text-white leading-tight shrink-0">
+                                {alert.ticker}
+                              </span>
+                              <FrameBadge frame={alert.frame} />
+                            </div>
+                            <div className="text-left shrink-0">
+                              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 leading-tight">{datePart}</p>
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">{timePart}</p>
+                            </div>
+                          </div>
+
+                          {/* Row 2: filter as رسالة */}
+                          <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug line-clamp-2">
+                            {alert.filter}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed truncate">{alert.message}</p>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 

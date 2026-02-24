@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
 import { Button } from '@/components/ui/button';
 
@@ -63,115 +64,47 @@ function TickerLogo({ ticker, size = 'md' }: { ticker: string; size?: 'sm' | 'md
   );
 
 }
-
-
-
-/* ─── Hero Chart (API based, no axes, no numbers) ───────── */
-
+/* ─── Hero Chart (Recharts with gradient fill) ───────── */
 function HeroChart({ ticker = 'AAPL' }: { ticker?: string }) {
-
-  const ref = useRef<HTMLDivElement>(null);
-
-
+  const [data, setData] = useState<{ date: string; value: number }[]>([]);
 
   useEffect(() => {
-
-    if (!document.getElementById('plotly-cdn')) {
-
-      const s = document.createElement('script');
-
-      s.id = 'plotly-cdn';
-
-      s.src = 'https://cdn.plot.ly/plotly-2.27.0.min.js';
-
-      document.head.appendChild(s);
-
-    }
-
-  }, []);
-
-
-
-  useEffect(() => {
-
-    const load = async () => {
-
-      while (!(window as any).Plotly) {
-
-        await new Promise(r => setTimeout(r, 200));
-
-      }
-
-
-
-      const res = await fetch(`${API_BASE}/api/chart/${ticker}`);
-
-      const d = await res.json();
-
-
-
-      const trace = {
-
-        x: d.dates,
-
-        y: d.weight,
-
-        type: 'scatter',
-
-        mode: 'lines',
-
-        line: { color: '#8b5cf6', width: 3 },
-
-        hoverinfo: 'skip',
-
-      };
-
-
-
-      const layout = {
-
-        margin: { t: 0, b: 0, l: 0, r: 0 },
-
-        xaxis: { visible: false, showgrid: false, zeroline: false },
-
-        yaxis: { visible: false, showgrid: false, zeroline: false },
-
-        showlegend: false,
-
-        paper_bgcolor: 'rgba(0,0,0,0)',
-
-        plot_bgcolor: 'rgba(0,0,0,0)',
-
-      };
-
-
-
-      (window as any).Plotly.react(ref.current, [trace], layout, {
-
-        staticPlot: true,
-
-        responsive: true,
-
-        displayModeBar: false,
-
-      });
-
-    };
-
-
-
-    load();
-
+    fetch(`${API_BASE}/api/chart/${ticker}`)
+      .then(r => r.json())
+      .then(d => {
+        const points = d.dates.map((date: string, i: number) => ({
+          date,
+          value: d.weight[i],
+        }));
+        setData(points);
+      })
+      .catch(() => {});
   }, [ticker]);
 
+  if (!data.length) return null;
 
-
-  return <div ref={ref} className="w-full h-full" />;
-
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="purpleGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area
+          type="monotone"
+          dataKey="value"
+          stroke="#8b5cf6"
+          strokeWidth={2.5}
+          fill="url(#purpleGrad)"
+          dot={false}
+          isAnimationActive={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
 }
-
-
-
 /* ─── Types ───────────────────────────────────────────── */
 
 interface CompanyData {
@@ -238,28 +171,32 @@ export function Hero({ navigate }: HeroProps) {
 
     // Fetch signals data to get a featured company
 
-    fetch(`${API_BASE}/api/signals`)
-
-      .then(r => r.json())
-
-      .then((data: SignalsPayload) => {
-
-        // Get first accumulation signal from continuous category
-
-        const featured = data.continuous?.[0] || data.sub?.[0] || data.change?.[0] || null;
-
-        setFeaturedCompany(featured);
-
-        setLoading(false);
-
-      })
-
-      .catch(() => {
-
-        setLoading(false);
-
+    
+// NEW
+fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
+  .then(r => r.json())
+  .then((data: any[]) => {
+    const aaplRows = data
+      .filter(r => r.holding_ticker === 'AAPL')
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const latest = aaplRows[0];
+    if (latest) {
+      setFeaturedCompany({
+        ticker:        'AAPL',
+        signal:        latest.load_level_state === 'distribution' ? 'distribution' : 'accumulation',
+        level:         latest.DiffCategory_1d,
+        volume:        latest.weight?.toFixed(3) ?? '—',
+        volumeType:    Math.abs(latest.load_direction) >= 3 ? 'high' : 'normal',
+        dailyDirection: latest.load_direction,
+        loadDiff1d:    latest.load_direction,
+        hittingDays:   Math.abs(latest.resell_counter_4),
+        perf5d:        parseFloat(latest.WeightChangePerc_5d) || 0,
+        perf10d:       parseFloat(latest.WeightChangePerc_3d) || 0,
       });
-
+    }
+    setLoading(false);
+  })
+  .catch(() => setLoading(false));
   }, []);
 
 
@@ -550,7 +487,7 @@ export function Hero({ navigate }: HeroProps) {
 
                     </div>
 
-                    <HeroChart ticker={featuredCompany.ticker} />
+<HeroChart ticker="AAPL" />
 
                   </div>
 
