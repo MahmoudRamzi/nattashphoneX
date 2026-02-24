@@ -262,9 +262,39 @@ const FrameBadge = ({ frame }: { frame: string }) => {
     </span>
   );
 };
-
+interface RawRow {
+  holding_ticker: string;
+  date: string;
+  weight: number;
+  load_level_state: string;
+  load_direction: number;
+  DiffCategory_1d: string;
+  WeightChangePerc_5d: string;
+  WeightChangePerc_3d: string;
+  level_type: string;
+}
 // ══════════════════════════════════════════════════════════════════════════════
 export function UserDashboard({ navigate }: UserDashboardProps) {
+  const [myListData, setMyListData] = useState<RawRow[]>([]);
+const [myListLoading, setMyListLoading] = useState(true);
+
+useEffect(() => {
+  fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
+    .then(r => r.json())
+    .then((data: RawRow[]) => {
+      // Keep only the latest row per ticker
+      const latestMap: Record<string, RawRow> = {};
+      for (const row of data) {
+        const existing = latestMap[row.holding_ticker];
+        if (!existing || row.date > existing.date) {
+          latestMap[row.holding_ticker] = row;
+        }
+      }
+      setMyListData(Object.values(latestMap).slice(0, 6));
+    })
+    .catch(console.error)
+    .finally(() => setMyListLoading(false));
+}, []);
   const [activePeriod, setActivePeriod]   = useState('نطاق قريب');
   const [isDark, setIsDark]               = useState(false);
   const [expandedMenus, setExpandedMenus] = useState(['portfolio', 'education']);
@@ -633,17 +663,50 @@ export function UserDashboard({ navigate }: UserDashboardProps) {
               </div>
               <div className="flex flex-col gap-2">
                 {myListCompanies.map((c) => (
-                  <div key={c.index} className="flex items-center justify-between py-2 border-b border-slate-50 dark:border-slate-700 last:border-0">
-                    {getSignalBadge(c.signal, c.change)}
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.name}</p>
-                        <p className="text-xs text-slate-400">{c.symbol}</p>
-                      </div>
-                      <CompanyLogo ticker={c.ticker} />
-                      <span className="text-xs text-slate-300 dark:text-slate-600 w-4 text-center">{c.index}</span>
-                    </div>
-                  </div>
+                 <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
+  <div className="flex items-center justify-between mb-4">
+    <button className="text-xs text-blue-500 hover:text-blue-600 font-medium">إدارة القائمة ←</button>
+    <h2 className="font-bold text-slate-800 dark:text-white text-base">قائمتي</h2>
+  </div>
+  <div className="flex flex-col gap-2">
+    {myListLoading ? (
+      Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
+    ) : myListData.map((c, idx) => {
+      const isAccum = c.load_level_state === 'accumulation' || c.load_level_state === 'pre-accumulation';
+      const dir = c.load_direction;
+      return (
+        <div key={c.holding_ticker} className="flex items-center justify-between py-2 border-b border-slate-50 dark:border-slate-700 last:border-0">
+          {/* Signal + direction */}
+          <div className="flex flex-col items-end gap-0.5">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              isAccum
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+            }`}>
+              {isAccum ? 'تجميع' : 'تصريف'}
+            </span>
+            <span className={`text-xs font-semibold ${
+              dir > 0 ? 'text-green-600 dark:text-green-400'
+              : dir < 0 ? 'text-red-600 dark:text-red-400'
+              : 'text-slate-400'
+            }`}>
+              {dir > 0 ? '+' : ''}{dir}
+            </span>
+          </div>
+          {/* Logo + name */}
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.holding_ticker}</p>
+              <p className="text-xs text-slate-400">{c.DiffCategory_1d}</p>
+            </div>
+            <CompanyLogo ticker={c.holding_ticker} />
+            <span className="text-xs text-slate-300 dark:text-slate-600 w-4 text-center">{idx + 1}</span>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</div>
                 ))}
               </div>
             </div>
