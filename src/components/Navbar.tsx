@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Menu, X, Moon, Sun } from 'lucide-react';
-
+import QafahLogo from './Qafah_logo';
 type Page = 'home' | 'login' | 'register' | 'pricing' | 'education' | 'admin';
 
 interface NavbarProps {
@@ -40,8 +40,8 @@ export function Navbar({ isDark, toggleTheme, navigate }: NavbarProps) {
         <div className="flex items-center justify-between h-16 lg:h-20">
           {/* Logo */}
           <button onClick={() => navigate('home')} className="flex items-center gap-2 group">
-            <img src="/logo.png" alt="قافة" className="h-10 w-auto" />
-          </button>
+  <QafahLogo className="h-10 w-auto" />
+</button>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">

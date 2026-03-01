@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 
 import { Button } from '@/components/ui/button';
 
 import { Badge } from '@/components/ui/badge';
 
 import { ArrowLeft, TrendingUp, Sparkles, Bell, BarChart3, Loader2 } from 'lucide-react';
+import QafahLogo from '@/components/Qafah_logo';
 
 
 
@@ -13,6 +14,7 @@ import { ArrowLeft, TrendingUp, Sparkles, Bell, BarChart3, Loader2 } from 'lucid
 
 const API_BASE = 'https://app.qafah.com';
 
+const Glopal_home_ticker = 'TEAM';
 
 
 /* ─── Ticker Logo Component ───────────────────────────── */
@@ -65,7 +67,7 @@ function TickerLogo({ ticker, size = 'md' }: { ticker: string; size?: 'sm' | 'md
 
 }
 /* ─── Hero Chart (Recharts with gradient fill) ───────── */
-function HeroChart({ ticker = 'AAPL' }: { ticker?: string }) {
+function HeroChart({ ticker = Glopal_home_ticker }: { ticker?: string }) {
   const [data, setData] = useState<{ date: string; value: number }[]>([]);
 
   useEffect(() => {
@@ -88,10 +90,11 @@ function HeroChart({ ticker = 'AAPL' }: { ticker?: string }) {
       <AreaChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="purpleGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.35} />
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.80} />
             <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
           </linearGradient>
         </defs>
+        <YAxis hide domain={['dataMin', 'dataMax']} />
         <Area
           type="monotone"
           dataKey="value"
@@ -177,22 +180,24 @@ fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
   .then(r => r.json())
   .then((data: any[]) => {
     const aaplRows = data
-      .filter(r => r.holding_ticker === 'AAPL')
+      .filter(r => r.holding_ticker === Glopal_home_ticker)
       .sort((a, b) => b.date.localeCompare(a.date));
     const latest = aaplRows[0];
     if (latest) {
       setFeaturedCompany({
-        ticker:        'AAPL',
+        ticker:        Glopal_home_ticker,
         signal:        latest.load_level_state === 'distribution' ? 'distribution' : 'accumulation',
         level:         latest.DiffCategory_1d,
         volume:        latest.weight?.toFixed(3) ?? '—',
         volumeType:    Math.abs(latest.load_direction) >= 3 ? 'high' : 'normal',
         dailyDirection: latest.load_direction,
-        loadDiff1d:    latest.load_direction,
-        hittingDays:   Math.abs(latest.resell_counter_4),
-        perf5d:        parseFloat(latest.WeightChangePerc_5d) || 0,
-        perf10d:       parseFloat(latest.WeightChangePerc_3d) || 0,
+        loadDiff1d:    ((aaplRows[0].load - aaplRows[1].load) / aaplRows[1].load) * 100,
+        perf5d:        ((aaplRows[0].load - aaplRows[4].load) / aaplRows[4].load) * 100,
+        perf10d:       ((aaplRows[0].load - aaplRows[9].load) / aaplRows[9].load) * 100,
+        hittingDays:   Math.abs(latest.resell_counter_4)
+
       });
+//console.log((aaplRows[5].load - aaplRows[0].load) / Math.abs(aaplRows[5].load) * 100) 
     }
     setLoading(false);
   })
@@ -451,7 +456,7 @@ fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
 
                     } text-xs`}>
 
-                      5 أيام: {featuredCompany.perf5d >= 0 ? '+' : ''}{featuredCompany.perf5d.toFixed(1)}%
+                      5 أيام: {featuredCompany.perf5d >= 0 ? '+' : ''}{featuredCompany.perf5d.toFixed(2)}%
 
                     </Badge>
 
@@ -475,19 +480,19 @@ fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
 
                   {/* Chart */}
 
-                  <div className="relative h-48 mb-4">
+                  <div className="relative h-48 mb-4 
+                  ">
 
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
 
-                      <div className="opacity-20">
-
-                        <img src="/logo.png" alt="قافة" className="h-28 w-auto" />
-
-                      </div>
+                      <div className="opacity-15 transform scale-50"> 
+      {/* Reduced opacity slightly for better legibility of the chart lines */}
+      <QafahLogo />
+    </div>
 
                     </div>
 
-<HeroChart ticker="AAPL" />
+<HeroChart ticker={Glopal_home_ticker} />
 
                   </div>
 

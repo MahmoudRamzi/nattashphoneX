@@ -7,6 +7,7 @@ import {
   ShoppingCart, RotateCcw, Plus, Activity, ArrowUpDown,
   AlertCircle, Loader2, Search,
 } from 'lucide-react';
+import QafahLogo from '@/components/Qafah_logo';
 
 /* ─── types ─────────────────────────────────────────────────────────── */
 
@@ -78,6 +79,13 @@ interface StockStats {
   loading: boolean;
 }
 
+interface CustomTickerData {
+  ticker: string;
+  data: RawRow[];
+  loading: boolean;
+  error: string;
+}
+
 /* ─── mappings ───────────────────────────────────────────────────────── */
 
 const LEVEL_TYPE_MAP: Record<string, { label: string; cat: 'continuous' | 'sub' | 'change' | 'none' }> = {
@@ -99,6 +107,30 @@ const SIGNAL_MAP: Record<string, { label: string; isAccum: boolean }> = {
 const API_BASE = 'https://app.qafah.com';
 
 /* ─── helpers ────────────────────────────────────────────────────────── */
+
+/** Create CompanyData from ticker when it's not in categories */
+function createCompanyDataFromTicker(ticker: string, rawRows: RawRow[]): CompanyData | null {
+  const sorted = [...rawRows].sort((a, b) => a.date.localeCompare(b.date));
+  const latestByTicker: Record<string, RawRow> = {};
+  for (const row of sorted) {
+    latestByTicker[row.holding_ticker] = row;
+  }
+  
+  const row = latestByTicker[ticker];
+  if (!row) return null;
+  
+  return {
+    ticker,
+    signal: row.load_level_state,
+    levelType: row.level_type as any,
+    diffCategory: row.DiffCategory_1d,
+    load: row.load,
+    loadDirection: row.load_direction,
+    perf5d: row.LoadChangePerc_5d,
+    perf3d: row.LoadChangePerc_3d,
+    date: row.date.slice(0, 10),
+  };
+}
 
 /** Build company list + history rows from raw API rows for a given tab category */
 function processRows(rows: RawRow[]): {
@@ -215,6 +247,63 @@ function useStockStats(ticker: string | undefined): StockStats {
   return stats;
 }
 
+/* ─── useTickerSearch ────────────────────────────────────────────────── */
+function useTickerSearch(searchQuery: string): CompanyData | null {
+  const [result, setResult] = React.useState<CompanyData | null>(null);
+  const [searched, setSearched] = React.useState('');
+
+  React.useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.trim() === searched) return;
+    
+    setSearched(searchQuery.trim());
+    const query = searchQuery.trim().toUpperCase();
+    
+    //console.log('🔍 [SEARCH] Searching for ticker:', query);
+    
+    fetch(`${API_BASE}/api/ticker_resell_signals`)
+      .then(r => r.json())
+      .then((data: RawRow[]) => {
+        const rows = [...data].sort((a, b) => a.date.localeCompare(b.date));
+        const latestByTicker: Record<string, RawRow> = {};
+        for (const row of rows) {
+          latestByTicker[row.holding_ticker] = row;
+        }
+        
+        const allAvailableTickers = Object.keys(latestByTicker).sort();
+        //console.log('🔍 [SEARCH] Available tickers in API:', {
+        //  count: allAvailableTickers.length,
+        //  tickers: allAvailableTickers,
+        //});
+        
+        const row = latestByTicker[query];
+        if (row) {
+          //console.log('✅ [SEARCH] Found ticker:', query, row);
+          const company: CompanyData = {
+            ticker: query,
+            signal: row.load_level_state,
+            levelType: row.level_type as any,
+            diffCategory: row.DiffCategory_1d,
+            load: row.load,
+            loadDirection: row.load_direction,
+            perf5d: row.LoadChangePerc_5d,
+            perf3d: row.LoadChangePerc_3d,
+            date: row.date.slice(0, 10),
+          };
+          setResult(company);
+        } else {
+          console.log()//'❌ [SEARCH] Ticker not found:', query);
+          setResult(null);
+        }
+      })
+      .catch(err => {
+        console.error()//'❌ [SEARCH] Error fetching data:', err);
+        setResult(null);
+      });
+  }, [searchQuery, searched]);
+
+  return result;
+}
+
 /* ─── PlotlyChart ────────────────────────────────────────────────────── */
 function PlotlyChart({ ticker }: { ticker: string }) {
   const divRef = useRef<HTMLDivElement>(null);
@@ -250,50 +339,62 @@ function PlotlyChart({ ticker }: { ticker: string }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d: ChartPayload = JSON.parse(raw);
 
+      const minWeight = Math.min(...d.weight.filter(v => typeof v === 'number'));
+      const maxWeight = Math.max(...d.weight.filter(v => typeof v === 'number'));
+
       const traces = [
-        { x: d.dates, y: d.weight, name: 'Load', type: 'scatter', mode: 'lines', line: { color: '#2c3e50', width: 2.5 } },
-        { x: d.dates, y: d.high_3, name: 'High (W3)', type: 'scatter', mode: 'lines', line: { color: '#95a5a6', width: 1.5, dash: 'dot' } },
-        { x: d.dates, y: d.low_3,  name: 'Low (W3)',  type: 'scatter', mode: 'lines', line: { color: '#95a5a6', width: 1.5, dash: 'dot' } },
+        { x: d.dates, y: d.weight, name: 'Load', type: 'scatter', mode: 'lines', line: { color: '#6941c6', width: 3, shape: 'spline' }, fill: 'tozeroy', fillcolor: 'rgba(244, 235, 255, 0.6)', hoverinfo: 'skip'},
+        { x: d.dates, y: d.high_3, name: 'High (W3)', type: 'scatter', mode: 'lines', line: { color: '#1375c6d0', width: 1.5, dash: 'dot' },hoverinfo: 'skip' },
+        { x: d.dates, y: d.low_3,  name: 'Low (W3)',  type: 'scatter', mode: 'lines', line: { color: '#1374c6d0', width: 1.5, dash: 'dot' },hoverinfo: 'skip' },
         {
           x: d.signals.positive_real.map(s => s.date), y: d.signals.positive_real.map(s => s.weight),
-          text: d.signals.positive_real.map(s => String(s.level)), name: 'Positive Real (W4)',
+          text: d.signals.positive_real.map(s => String(s.level)), name: 'Pos Real',hoverinfo: 'skip',
           type: 'scatter', mode: 'markers+text', textposition: 'top center',
-          marker: { size: 14, color: 'rgba(0,255,136,0.3)', symbol: 'diamond', line: { width: 2, color: '#00cc70' } },
+          marker: { size: 9, color: 'rgba(0,255,136,0.3)', symbol: 'diamond', line: { width: 2, color: '#00cc70' } },
           textfont: { size: 13, color: '#00cc70', family: 'monospace' },
         },
         {
           x: d.signals.negative_real.map(s => s.date), y: d.signals.negative_real.map(s => s.weight),
-          text: d.signals.negative_real.map(s => String(s.level)), name: 'Negative Real (W4)',
+          text: d.signals.negative_real.map(s => String(s.level)), name: 'Neg Real',hoverinfo: 'skip',
           type: 'scatter', mode: 'markers+text', textposition: 'top center',
-          marker: { size: 14, color: 'rgba(255,68,102,0.3)', symbol: 'diamond', line: { width: 2, color: '#e63946' } },
+          marker: { size: 9, color: 'rgba(255,68,102,0.3)', symbol: 'diamond', line: { width: 2, color: '#e63946' } },
           textfont: { size: 13, color: '#e63946', family: 'monospace' },
         },
         {
           x: d.signals.positive_internal.map(s => s.date), y: d.signals.positive_internal.map(s => s.weight),
-          text: d.signals.positive_internal.map(s => String(s.level)), name: 'Positive Internal (W4)',
+          text: d.signals.positive_internal.map(s => String(s.level)), name: 'Pos Internal',hoverinfo: 'skip',
           type: 'scatter', mode: 'markers+text', textposition: 'bottom center',
-          marker: { size: 11, color: 'rgba(0,212,255,0.3)', symbol: 'circle', line: { width: 2, color: '#0096c7' } },
+          marker: { size: 9, color: 'rgba(0,212,255,0.3)', symbol: 'circle', line: { width: 2, color: '#0096c7' } },
           textfont: { size: 12, color: '#0096c7', family: 'monospace' },
         },
         {
           x: d.signals.negative_internal.map(s => s.date), y: d.signals.negative_internal.map(s => s.weight),
-          text: d.signals.negative_internal.map(s => String(s.level)), name: 'Negative Internal (W4)',
+          text: d.signals.negative_internal.map(s => String(s.level)), name: 'Neg Internal',hoverinfo: 'skip',
           type: 'scatter', mode: 'markers+text', textposition: 'bottom center',
-          marker: { size: 11, color: 'rgba(255,149,0,0.3)', symbol: 'circle', line: { width: 2, color: '#d97706' } },
+          marker: { size: 9, color: 'rgba(255,149,0,0.3)', symbol: 'circle', line: { width: 2, color: '#d97706' } },
           textfont: { size: 12, color: '#d97706', family: 'monospace' },
         },
       ];
 
       const layout = {
         margin: { t: 20, b: 130, l: 60, r: 20 },
-        xaxis: { title: 'Date', gridcolor: 'rgba(0,0,0,0.1)', color: '#1e293b' },
-        yaxis: { title: '',     gridcolor: 'rgba(0,0,0,0.1)', color: '#1e293b' },
-        hovermode: 'x unified', showlegend: true,
+          xaxis: {
+            title: 'التاريخ',
+    showgrid: false
+  },
+  yaxis: {
+    showgrid: true,
+    gridcolor: "#dc8bff48",
+    gridwidth: 1,
+    color: '#00000000',
+    range: [minWeight * 0.95, maxWeight * 1.05]
+  },
+        hovermode: 'closest', showlegend: false,dragmode: 'pan',
         legend: { orientation: 'h', x: 0, y: -0.28, xanchor: 'left', yanchor: 'top', font: { size: 11, color: '#1e293b' }, bgcolor: 'rgba(255,255,255,0)', borderwidth: 0 },
-        paper_bgcolor: '#ffffff', plot_bgcolor: '#f8fafc', height: 520,
+        paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', height: 520,
       };
 
-      Plotly.react(divRef.current, traces, layout, { responsive: true });
+      Plotly.react(divRef.current, traces, layout, { displayModeBar: false, scrollZoom: true,responsive: true });
       setStatus('idle');
     } catch (e: unknown) {
       setErrMsg(e instanceof Error ? e.message : 'Unknown error');
@@ -355,7 +456,7 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-slate-50 rounded-lg">
-            {['التاريخ', 'الاتجاه', 'الحمل', 'المستوى', '5 أيام', '3 أيام'].map(h => (
+            {['التاريخ', 'الاتجاه', 'المستوى', '5 أيام', '3 أيام'].map(h => (
               <th key={h} className="text-right py-2.5 px-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">{h}</th>
             ))}
           </tr>
@@ -374,10 +475,7 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
                 </span>
               </td>
 
-              {/* الحمل — load (raw float) */}
-              <td className="py-2.5 px-3 font-mono text-xs text-slate-700">
-                {typeof row.load === 'number' ? row.load.toFixed(4) : row.load}
-              </td>
+
 
               {/* المستوى — DiffCategory_1d */}
               <td className="py-2.5 px-3">
@@ -418,10 +516,17 @@ export function CompaniesAccumulationPage() {
   const [sigsLoading, setSigsLoading] = useState(true);
   const [sigsError,   setSigsError]   = useState('');
   const [latestDate,  setLatestDate]  = useState('…');
+  const [uniqueTickers, setUniqueTickers] = useState<string[]>([]);
 
   // Processed bucketed data
   const [byCategory,   setByCategory]   = useState<Record<'continuous' | 'sub' | 'change', CompanyData[]>>({ continuous: [], sub: [], change: [] });
   const [historyFn,    setHistoryFn]    = useState<(t: string) => HistoryRow[]>(() => () => []);
+
+  // Dropdown visibility
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Search for ticker outside of categories
+  const searchedTickerData = useTickerSearch(searchQuery);
 
   // Live stock stats
   const stockStats = useStockStats(selectedCompany?.ticker);
@@ -433,8 +538,27 @@ export function CompaniesAccumulationPage() {
     fetch(`${API_BASE}/api/ticker_resell_signals?mode=${mode}`)
       .then(r => r.json())
       .then((data: RawRow[]) => {
+        // 🔍 DEBUG: Log all tickers from API
+        const allTickers = [...new Set(data.map(row => row.holding_ticker))];
+        //console.log('🔍 [DEBUG] Tickers from API:', {
+        //  totalRows: data.length,
+        //  uniqueTickers: allTickers.length,
+        //  tickers: allTickers.sort(),
+        //});
+        
         setRawRows(data);
+        setUniqueTickers(allTickers.sort());
+        
         const { byCategory: bc, latestDate: ld, historyFor } = processRows(data);
+        
+        // 🔍 DEBUG: Log categorized tickers
+        //console.log('🔍 [DEBUG] Categorized Tickers:', {
+        //  continuous: bc.continuous.map(c => c.ticker),
+        //  sub: bc.sub.map(c => c.ticker),
+        //  change: bc.change.map(c => c.ticker),
+        //  total: bc.continuous.length + bc.sub.length + bc.change.length,
+        //});
+        
         setByCategory(bc);
         setLatestDate(ld);
         setHistoryFn(() => historyFor);
@@ -456,9 +580,6 @@ export function CompaniesAccumulationPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────
   const allInCategory = byCategory[selectedCategory] ?? [];
-  const filteredCompanies = allInCategory.filter(c =>
-    !searchQuery || c.ticker.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   const counts = {
     continuous: byCategory.continuous.length,
@@ -474,6 +595,29 @@ export function CompaniesAccumulationPage() {
     change:     { color: 'bg-orange-600', icon: <ArrowUpDown className="w-4 h-4 ml-2" />, label: 'تغيير اتجاه' },
   } as const;
 
+  // Build dropdown results: companies + unique tickers not in categories
+  const allCompaniesInCategories = [
+    ...byCategory.continuous,
+    ...byCategory.sub,
+    ...byCategory.change,
+  ];
+  
+  const dropdownResults = searchQuery.trim()
+    ? [
+        // First: matching companies from categories
+        ...allCompaniesInCategories.filter(c =>
+          c.ticker.toLowerCase().includes(searchQuery.toLowerCase())
+        ),
+        // Then: unique tickers not already in categories
+        ...uniqueTickers
+          .filter(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+          .filter(t => !allCompaniesInCategories.some(c => c.ticker === t))
+          .slice(0, 20) // limit to 20 additional tickers
+          .map(t => createCompanyDataFromTicker(t, rawRows))
+          .filter(c => c !== null) as CompanyData[],
+      ]
+    : [];
+
   return (
     <div className="min-h-screen bg-slate-50" dir="rtl">
 
@@ -482,11 +626,13 @@ export function CompaniesAccumulationPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <button className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-                <ArrowRightLeft className="w-5 h-5 text-slate-600" />
-              </button>
-              <span className="text-lg font-bold tracking-tight text-slate-800">قافة</span>
-            </div>
+  {/* Replaced the <img> tag with your component */}
+  <div className="w-12 h-12 flex items-center justify-center">
+    <QafahLogo />
+  </div>
+  
+  <span className="text-lg font-bold tracking-tight text-slate-800">Qafah</span>
+</div>
             <div className="flex items-center gap-4 text-sm text-slate-500">
               <span>فاحص السوق</span>
               <span className="text-slate-300">|</span>
@@ -510,12 +656,15 @@ export function CompaniesAccumulationPage() {
         <div className="flex gap-2 mb-6 flex-wrap">
           {(['continuous', 'sub', 'change'] as const).map(cat => {
             const m  = categoryMeta[cat];
-            const ac = selectedCategory === cat;
+            const ac = selectedCategory === cat && !searchQuery;
             return (
               <Button
                 key={cat}
                 variant={ac ? 'default' : 'outline'}
-                onClick={() => setSelectedCategory(cat)}
+                onClick={() => {
+                  setSelectedCategory(cat);
+                  setSearchQuery('');
+                }}
                 className={`transition-all ${ac ? m.color + ' text-white' : 'hover:bg-slate-100'}`}
               >
                 {m.icon}
@@ -560,10 +709,9 @@ export function CompaniesAccumulationPage() {
                     </div>
                     <div className="text-right">
                       <p className={`text-2xl font-bold ${selectedCompany.loadDirection >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {selectedCompany.loadDirection > 0 ? '+' : ''}{selectedCompany.loadDirection}
+                        {selectedCompany.loadDirection}{selectedCompany.loadDirection > 0 ? '+' : ''}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">اتجاه الحمل</p>
-                      <p className="text-sm font-mono text-slate-500 mt-0.5">{selectedCompany.load?.toFixed(4)}</p>
                     </div>
                   </div>
                 ) : (
@@ -628,7 +776,9 @@ export function CompaniesAccumulationPage() {
                 </h3>
                 {sigsLoading
                   ? <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}</div>
-                  : <HistoryTable rows={historyRows} />
+                  :     <div className="max-h-[25vh] overflow-y-auto">
+      <HistoryTable rows={historyRows} />
+    </div>
                 }
               </CardContent>
             </Card>
@@ -637,23 +787,79 @@ export function CompaniesAccumulationPage() {
           {/* ── Right: Company list ──────────────────────────────────── */}
           <div dir="rtl" className="flex flex-col" style={{ maxHeight: 'calc(100vh - 160px)', position: 'sticky', top: '76px' }}>
 
-            {/* Search */}
+            {/* Unified Search */}
             <div className="relative mb-3">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="بحث عن شركة..."
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setShowDropdown(e.target.value.trim().length > 0);
+                }}
+                onFocus={() => setShowDropdown(searchQuery.trim().length > 0)}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                placeholder="بحث عن شركة أو رمز تداول..."
                 className="w-full pr-9 pl-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-300 placeholder:text-slate-400"
               />
+              
+              {/* Dropdown results with card format */}
+              {showDropdown && dropdownResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 border border-slate-200 rounded-lg bg-white shadow-lg z-50 max-h-80 overflow-y-auto">
+                  {dropdownResults.map(company => {
+                    const sigMeta = SIGNAL_MAP[company.signal] ?? SIGNAL_MAP['neutral'];
+                    const isNotInCategory = !allCompaniesInCategories.some(c => c.ticker === company.ticker);
+                    return (
+                      <div
+                        key={company.ticker}
+                        onClick={() => {
+                          setSelectedCompany(company);
+                          setShowDropdown(false);
+                        }}
+                        className={`border-b last:border-0 p-2.5 hover:bg-slate-50 cursor-pointer transition-colors ${
+                          isNotInCategory ? 'bg-amber-50/50 hover:bg-amber-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <TickerLogo ticker={company.ticker} size="sm" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="font-bold text-slate-900 text-sm">{company.ticker}</span>
+                              {isNotInCategory && (
+                                <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold shrink-0">
+                                  جديد
+                                </span>
+                              )}
+                              <SignalBadge signal={company.signal} />
+                            </div>
+                            <div className="flex items-center gap-1 flex-wrap text-xs">
+                              <Badge className="bg-slate-100 text-slate-600 font-mono text-xs">{company.diffCategory}</Badge>
+                              <span className={`font-semibold px-1.5 py-0.5 rounded-md font-mono text-xs ${
+                                company.loadDirection > 0 ? 'bg-emerald-50 text-emerald-700' : company.loadDirection < 0 ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'
+                              }`}>
+                                {company.loadDirection > 0 ? '+' : ''}{company.loadDirection}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              
+              {showDropdown && searchQuery.trim() && dropdownResults.length === 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 border border-slate-200 rounded-lg bg-white shadow-lg z-50 p-3 text-center text-sm text-slate-500">
+                  لا توجد نتائج
+                </div>
+              )}
             </div>
 
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">
-              قائمة الشركات ({sigsLoading ? '…' : filteredCompanies.length})
+              قائمة الشركات ({sigsLoading ? '…' : allInCategory.length})
             </p>
 
             {/* Scrollable list */}
-            <div className="overflow-y-auto flex-1 space-y-2 pl-0.5 pr-0.5" style={{ scrollbarWidth: 'thin' }}>
+            <div className="overflow-y-auto flex-1 space-y-2 pl-0.5 pr-0.5" >
 
               {/* Loading skeletons */}
               {sigsLoading && [1, 2, 3].map(i => (
@@ -671,7 +877,7 @@ export function CompaniesAccumulationPage() {
               ))}
 
               {/* Company cards */}
-              {!sigsLoading && filteredCompanies.map(company => {
+              {!sigsLoading && allInCategory.map(company => {
                 const sigMeta = SIGNAL_MAP[company.signal] ?? SIGNAL_MAP['neutral'];
                 return (
                   <Card
@@ -722,8 +928,8 @@ export function CompaniesAccumulationPage() {
                 );
               })}
 
-              {!sigsLoading && filteredCompanies.length === 0 && !sigsError && (
-                <div className="text-center text-slate-400 text-sm py-8">لا توجد نتائج</div>
+              {!sigsLoading && allInCategory.length === 0 && !sigsError && (
+                <div className="text-center text-slate-400 text-sm py-8">لا توجد شركات في هذه الفئة</div>
               )}
             </div>
           </div>

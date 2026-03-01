@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { Hero } from '@/sections/Hero';
@@ -21,13 +21,34 @@ import { LeaderboardPage } from '@/pages/LeaderboardPage';
 import { AdminEmployees } from '@/pages/AdminEmployees';
 import { CompaniesAccumulationPage } from '@/pages/CompaniesAccumulationPage';
 import { PreMarketServices } from '@/pages/PreMarketServices';
+import { useAuth, getRoleHomePage } from '@/hooks/useAuth';
+import { Loader2 } from 'lucide-react';
 
-function HomePage({ isDark, toggleTheme, navigate }: { isDark: boolean; toggleTheme: () => void; navigate: (page: Page) => void }) {
+export type Page =
+  | 'home' | 'login' | 'register' | 'pricing' | 'education'
+  | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
+  | 'admin-employees' | 'companies-accumulation' | 'premarket';
+
+const PROTECTED_PAGES: Page[] = [
+  'dashboard', 'alerts', 'employee', 'leaderboard',
+  'admin', 'admin-employees', 'companies-accumulation', 'premarket',
+];
+const ADMIN_ONLY_PAGES: Page[] = ['admin', 'admin-employees'];
+const STAFF_ROLES = ['market_supervisor', 'us_market_supervisor', 'employee', 'admin'];
+
+// ── Home page ────────────────────────────────────────────────────────────────
+function HomePage({
+  isDark, toggleTheme, navigate,
+}: {
+  isDark: boolean;
+  toggleTheme: () => void;
+  navigate: (page: Page) => void;
+}) {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900">
       <Navbar isDark={isDark} toggleTheme={toggleTheme} navigate={navigate} />
       <main>
-        <Hero navigate={(page: string) => navigate(page as Page)} />
+        <Hero navigate={(p: string) => navigate(p as Page)} />
         <SubscriberServices />
         <OSICommunity />
         <Features />
@@ -41,63 +62,147 @@ function HomePage({ isDark, toggleTheme, navigate }: { isDark: boolean; toggleTh
   );
 }
 
-type Page = 'home' | 'login' | 'register' | 'pricing' | 'education' | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard' | 'admin-employees' | 'companies-accumulation' | 'premarket';
+function AppLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-10 h-10 text-purple-600 animate-spin" />
+        <p className="text-slate-500 text-sm">جارٍ التحميل...</p>
+      </div>
+    </div>
+  );
+}
 
+// ════════════════════════════════════════════════════════════════════════════════
 function App() {
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark]           = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('home');
 
+  // Tracks whether we just did a post-login navigation so session-restore
+  // auto-redirect doesn't override it.
+  const postLoginRef = useRef(false);
+
+  const { user, isLoading, isAuthenticated, login, logout } = useAuth();
+
+  // Restore theme
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (savedTheme === 'dark' || (!savedTheme && systemPrefersDark)) {
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (saved === 'dark' || (!saved && prefersDark)) {
       setIsDark(true);
       document.documentElement.classList.add('dark');
     }
   }, []);
 
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    if (!isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+  // Auto-redirect on SESSION RESTORE (page refresh while logged in) only.
+  // Skipped when postLoginRef is set — that means we already navigated intentionally.
+  useEffect(() => {
+    if (isLoading) return;
+    if (postLoginRef.current) {
+      postLoginRef.current = false;
+      return;
     }
+    if (isAuthenticated && user && ['login', 'register', 'home'].includes(currentPage)) {
+      setCurrentPage(getRoleHomePage(user.role) as Page);
+      window.scrollTo(0, 0);
+    }
+  }, [isLoading, isAuthenticated, user]);
+
+  const toggleTheme = () => {
+    setIsDark(prev => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      return next;
+    });
   };
 
-  const navigate = (page: Page) => {
+  // ── navigateAfterLogin ───────────────────────────────────────────────────
+  // Called by Login.tsx after a successful login. Bypasses the isAuthenticated
+  // guard entirely because we know auth just succeeded — isAuthenticated hasn't
+  // updated yet (React state is async), but the login is valid.
+  const navigateAfterLogin = (page: Page) => {
+    postLoginRef.current = true;
     setCurrentPage(page);
     window.scrollTo(0, 0);
   };
 
+  // ── navigate ─────────────────────────────────────────────────────────────
+  // Normal navigation used everywhere else — enforces auth guards.
+  const navigate = (page: Page) => {
+    if (PROTECTED_PAGES.includes(page) && !isAuthenticated) {
+      setCurrentPage('login');
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (ADMIN_ONLY_PAGES.includes(page) && user?.role !== 'admin') {
+      setCurrentPage(isAuthenticated ? (getRoleHomePage(user!.role) as Page) : 'home');
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (page === 'employee' && !STAFF_ROLES.includes(user?.role ?? '')) {
+      setCurrentPage(isAuthenticated ? (getRoleHomePage(user!.role) as Page) : 'home');
+      window.scrollTo(0, 0);
+      return;
+    }
+    setCurrentPage(page);
+    window.scrollTo(0, 0);
+  };
+
+  const handleLogout = async () => {
+    postLoginRef.current = false;
+    await logout();
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
+
+  if (isLoading) return <AppLoader />;
+
   switch (currentPage) {
     case 'login':
-      return <Login navigate={navigate} />;
+      // Pass navigateAfterLogin so Login bypasses the auth guard
+      return (
+        <Login
+          navigate={navigate}
+          navigateAfterLogin={navigateAfterLogin}
+          login={login}
+          isLoading={isLoading}
+        />
+      );
+
     case 'register':
       return <Register navigate={navigate} />;
+
     case 'pricing':
       return <PricingPage isDark={isDark} toggleTheme={toggleTheme} navigate={navigate} />;
+
     case 'education':
       return <Education isDark={isDark} toggleTheme={toggleTheme} navigate={navigate} />;
+
     case 'admin':
-      return <AdminDashboard navigate={(page: string) => navigate(page as Page)} />;
+      return <AdminDashboard navigate={(p) => navigate(p as Page)} onLogout={handleLogout} />;
+
     case 'admin-employees':
-      return <AdminEmployees navigate={(page: string) => navigate(page as Page)} />;
+      return <AdminEmployees navigate={(p) => navigate(p as Page)} onLogout={handleLogout} />;
+
     case 'companies-accumulation':
       return <CompaniesAccumulationPage />;
+
     case 'premarket':
-      return <PreMarketServices navigate={(page: string) => navigate(page as Page)} />;
+      return <PreMarketServices navigate={(p) => navigate(p as Page)} />;
+
     case 'dashboard':
-      return <UserDashboard navigate={navigate} />;
+      return <UserDashboard navigate={navigate} onLogout={handleLogout} user={user} />;
+
     case 'alerts':
       return <AlertsPage navigate={navigate} />;
+
     case 'employee':
       return <EmployeeDashboard navigate={navigate} />;
+
     case 'leaderboard':
       return <LeaderboardPage navigate={navigate} />;
+
     default:
       return <HomePage isDark={isDark} toggleTheme={toggleTheme} navigate={navigate} />;
   }

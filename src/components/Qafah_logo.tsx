@@ -1,7 +1,6 @@
 const QafahLogo = ({ className = "" }: { className?: string }) => (
   <img
-    src="https://app.qafah.com/static/qafah_new_logo.jpg"
-    alt="Qafah Logo"
+    src="https://app.qafah.com/static/logo.png"    alt="Qafah Logo"
     className={className}
   />
 );

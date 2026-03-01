@@ -4,12 +4,13 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, Bell, Moon, Sun, Activity, Star,
+  Bell, Moon, Sun, Activity,
   Home, Phone, GraduationCap, ChevronDown, ChevronUp,
-  Settings, PieChart, Loader2, RefreshCw
+  Settings, PieChart, Loader2, RefreshCw, LogOut, Shield
 } from 'lucide-react';
 import QafahLogo from '@/components/Qafah_logo';
 import type { Last6DaysResponse, EmojiDay } from '@/types/message';
+import type { AuthUser } from '@/hooks/useAuth';
 
 const API_BASE = 'https://app.qafah.com';
 
@@ -56,7 +57,6 @@ interface DividendsResponse {
   updated: string;
 }
 
-// ── NEW: Alerts types ──────────────────────────────────────────────────────────
 interface AlertItem {
   ticker: string;
   alert_time: string;
@@ -77,38 +77,30 @@ interface AlertsApiResponse {
   data: AlertItem[];
 }
 
-// Arabic label → window INDEX value in record.window
+interface RawRow {
+  holding_ticker: string;
+  date: string;
+  weight: number;
+  load_level_state: string;
+  load_direction: number;
+  DiffCategory_1d: string;
+  WeightChangePerc_5d: string;
+  WeightChangePerc_3d: string;
+  level_type: string;
+}
+
 const WINDOW_MAP: Record<string, number> = {
   'نطاق قريب': 3,
   'متوسط':     4,
   'بعيد':      10,
 };
 
-// ─── Static data ──────────────────────────────────────────────────────────────
-const myListCompanies = [
-  { index: 1, symbol: 'AAPL', name: 'Apple',     ticker: 'AAPL', signal: 'accumulation', change:  2.45 },
-  { index: 2, symbol: 'NVDA', name: 'NVIDIA',    ticker: 'NVDA', signal: 'accumulation', change:  3.21 },
-  { index: 3, symbol: 'META', name: 'Meta',      ticker: 'META', signal: 'distribution', change: -1.23 },
-  { index: 4, symbol: 'MSFT', name: 'Microsoft', ticker: 'MSFT', signal: 'accumulation', change:  1.67 },
-  { index: 5, symbol: 'AMD',  name: 'AMD',       ticker: 'AMD',  signal: 'distribution', change: -2.84 },
-  { index: 6, symbol: 'AMZN', name: 'Amazon',    ticker: 'AMZN', signal: 'accumulation', change:  1.89 },
-];
-
-type Page =
-  | 'home' | 'login' | 'register' | 'pricing' | 'education'
-  | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
-  | 'admin-employees' | 'companies-accumulation' | 'premarket';
-
-interface UserDashboardProps {
-  navigate: (page: Page) => void;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const UpTriangle = () => (
-  <img src="data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='24' height='24' rx='8' fill='%2322c55e'/%3E%3Cpath d='M12 7L18 16H6L12 7Z' fill='white'/%3E%3C/svg%3E" alt="up" className="w-6 h-6" />
+  <img src="https://app.qafah.com/static/TriUp.png" alt="up" className="w-10 h-10" />
 );
 const DownTriangle = () => (
-  <img src="data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='24' height='24' rx='8' fill='%23ef4444'/%3E%3Cpath d='M12 17L6 8H18L12 17Z' fill='white'/%3E%3C/svg%3E" alt="down" className="w-6 h-6" />
+  <img src="https://app.qafah.com/static/TriDn.png" alt="down" className="w-10 h-10" />
 );
 const NeutralCircle = () => (
   <svg width="10" height="10" viewBox="0 0 10 10">
@@ -174,7 +166,6 @@ const parseEmojiString = (emojiStr: string): EmojiDay[] => {
   return parsed.reverse();
 };
 
-// ── Format alert time: "12 أغسطس 08:00" ──────────────────────────────────────
 const formatAlertTime = (isoStr: string): { datePart: string; timePart: string } => {
   try {
     const d = new Date(isoStr);
@@ -188,7 +179,6 @@ const formatAlertTime = (isoStr: string): { datePart: string; timePart: string }
   }
 };
 
-// ─── Custom Tooltip ───────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label, windowIndex, hKey, lKey }: any) => {
   if (!active || !payload?.length) return null;
   const get = (key: string) => payload.find((p: any) => p.dataKey === key)?.value;
@@ -199,35 +189,33 @@ const CustomTooltip = ({ active, payload, label, windowIndex, hKey, lKey }: any)
   return (
     <div dir="rtl" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 14px', minWidth: 210, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', fontSize: 12 }}>
       <p style={{ color: '#64748b', marginBottom: 6, fontWeight: 600 }}>{label}</p>
-      {ql   != null && <p style={{ color: '#3b82f6', fontWeight: 700 }}>QAFAH {windowIndex}-يوم : {Number(ql).toFixed(3)}</p>}
-      {high != null && <p style={{ color: '#22c55e', fontWeight: 600 }}>High {suffix} {windowIndex} : {Number(high).toFixed(3)}</p>}
-      {low  != null && <p style={{ color: '#16a34a' }}>Low {suffix} {windowIndex} : {Number(low).toFixed(3)}</p>}
+      {ql   != null && <p style={{ color: '#8b5cf6', fontWeight: 700 }}>QAFAH {windowIndex}-يوم : {Number(ql).toFixed(3)}</p>}
+      {high != null && <p style={{ color: '#3b82f6', fontWeight: 600 }}>High {suffix} {windowIndex} : {Number(high).toFixed(3)}</p>}
+      {low  != null && <p style={{ color: '#3b82f6' }}>Low {suffix} {windowIndex} : {Number(low).toFixed(3)}</p>}
     </div>
   );
 };
 
-// ─── Custom Legend ────────────────────────────────────────────────────────────
 const ChartLegend = ({ windowIndex, hKey, lKey }: { windowIndex: number; hKey: string; lKey: string }) => {
   const suffix = hKey.replace('h', '');
   return (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 10, fontSize: 12, color: '#64748b' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#3b82f6" strokeWidth="2.5" /><circle cx="14" cy="5" r="3.5" fill="#3b82f6" /></svg>
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#8b5cf6" strokeWidth="2.5" /><circle cx="14" cy="5" r="3.5" fill="#8b5cf6" /></svg>
         QAFAH {windowIndex}-يوم
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2.5" strokeDasharray="5 3" /></svg>
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#3b82f6" strokeWidth="2.5" strokeDasharray="5 3" /></svg>
         High {suffix} {windowIndex}
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#22c55e" strokeWidth="2" strokeDasharray="5 3" opacity="0.55" /></svg>
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#3b82f6" strokeWidth="2" strokeDasharray="5 3" opacity="0.55" /></svg>
         Low {suffix} {windowIndex}
       </span>
     </div>
   );
 };
 
-// ── Skeleton loader ────────────────────────────────────────────────────────────
 const SkeletonRow = () => (
   <div className="flex items-center justify-between animate-pulse">
     <div className="h-8 w-16 bg-slate-100 dark:bg-slate-700 rounded-lg" />
@@ -252,49 +240,27 @@ const AlertSkeletonRow = () => (
   </div>
 );
 
-// ── Frame badge ────────────────────────────────────────────────────────────────
-const FrameBadge = ({ frame }: { frame: string }) => {
-  // Map numeric frame to readable label
-  const frameLabel = frame ? `${frame}د` : '—';
-  return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] font-bold leading-none shrink-0">
-      {frameLabel}
-    </span>
-  );
-};
-interface RawRow {
-  holding_ticker: string;
-  date: string;
-  weight: number;
-  load_level_state: string;
-  load_direction: number;
-  DiffCategory_1d: string;
-  WeightChangePerc_5d: string;
-  WeightChangePerc_3d: string;
-  level_type: string;
-}
-// ══════════════════════════════════════════════════════════════════════════════
-export function UserDashboard({ navigate }: UserDashboardProps) {
-  const [myListData, setMyListData] = useState<RawRow[]>([]);
-const [myListLoading, setMyListLoading] = useState(true);
+const FrameBadge = ({ frame }: { frame: string }) => (
+  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] font-bold leading-none shrink-0">
+    {frame ? `${frame}د` : '—'}
+  </span>
+);
 
-useEffect(() => {
-  fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
-    .then(r => r.json())
-    .then((data: RawRow[]) => {
-      // Keep only the latest row per ticker
-      const latestMap: Record<string, RawRow> = {};
-      for (const row of data) {
-        const existing = latestMap[row.holding_ticker];
-        if (!existing || row.date > existing.date) {
-          latestMap[row.holding_ticker] = row;
-        }
-      }
-      setMyListData(Object.values(latestMap).slice(0, 6));
-    })
-    .catch(console.error)
-    .finally(() => setMyListLoading(false));
-}, []);
+type Page =
+  | 'home' | 'login' | 'register' | 'pricing' | 'education'
+  | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
+  | 'admin-employees' | 'companies-accumulation' | 'premarket';
+
+interface UserDashboardProps {
+  navigate: (page: Page) => void;
+  onLogout?: () => void;
+  user?: AuthUser | null; // ← so we know if viewer is an admin
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) {
+  const isAdmin = user?.role === 'admin';
+
   const [activePeriod, setActivePeriod]   = useState('نطاق قريب');
   const [isDark, setIsDark]               = useState(false);
   const [expandedMenus, setExpandedMenus] = useState(['portfolio', 'education']);
@@ -314,14 +280,36 @@ useEffect(() => {
   const [dividendsLoading, setDividendsLoading] = useState(true);
   const [dividendsError, setDividendsError]     = useState<string | null>(null);
 
-  // ── NEW: Live alerts state ────────────────────────────────────────────────
-  const [alertsData, setAlertsData]         = useState<AlertItem[]>([]);
-  const [alertsLoading, setAlertsLoading]   = useState(true);
-  const [alertsError, setAlertsError]       = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed]   = useState<Date | null>(null);
-  const [isRefreshing, setIsRefreshing]     = useState(false);
+  const [alertsData, setAlertsData]       = useState<AlertItem[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [alertsError, setAlertsError]     = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing]   = useState(false);
 
-  // ── Fetch alerts ──────────────────────────────────────────────────────────
+  const [myListData, setMyListData]       = useState<RawRow[]>([]);
+  const [myListLoading, setMyListLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/ticker_resell_signals?mode=cached`)
+      .then(r => r.json())
+      .then((data: RawRow[]) => {
+        const latestMap: Record<string, RawRow> = {};
+        for (const row of data) {
+          const existing = latestMap[row.holding_ticker];
+          if (!existing || row.date > existing.date) latestMap[row.holding_ticker] = row;
+        }
+        const sorted = Object.values(latestMap).sort((a, b) => {
+          const aIsAccum = a.load_level_state.includes('accumulation') ? 0 : 1;
+          const bIsAccum = b.load_level_state.includes('accumulation') ? 0 : 1;
+          if (aIsAccum !== bIsAccum) return aIsAccum - bIsAccum;
+          return Math.abs(b.load_direction) - Math.abs(a.load_direction);
+        });
+        setMyListData(sorted.slice(0, 6));
+      })
+      .catch()//console.log) // Silent fail
+      .finally(() => setMyListLoading(false));
+  }, []);
+
   const fetchAlerts = useCallback(async (showSpinner = false) => {
     try {
       if (showSpinner) setIsRefreshing(true);
@@ -329,23 +317,16 @@ useEffect(() => {
       const res = await fetch(`${API_BASE}/api/alerts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ticker: ['all'],
-          frame: ['all'],
-          filter: ['all'],
-          date_filter: 'all',
-        }),
+        body: JSON.stringify({ ticker: ['all'], frame: ['all'], filter: ['all'], date_filter: 'all' }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: AlertsApiResponse = await res.json();
-      // Show latest first, limit to 20 for display
       const sorted = [...(data.data ?? [])].sort(
         (a, b) => new Date(b.alert_time).getTime() - new Date(a.alert_time).getTime()
       ).slice(0, 10);
       setAlertsData(sorted);
       setLastRefreshed(new Date());
     } catch (e: any) {
-      console.error('Failed to fetch alerts:', e);
       setAlertsError(e.message ?? 'Unknown error');
     } finally {
       setAlertsLoading(false);
@@ -353,14 +334,12 @@ useEffect(() => {
     }
   }, []);
 
-  // Initial fetch + 1-minute auto-refresh
   useEffect(() => {
     fetchAlerts();
     const interval = setInterval(() => fetchAlerts(true), 60_000);
     return () => clearInterval(interval);
   }, [fetchAlerts]);
 
-  // ── Fetch uptrend data ────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -378,7 +357,6 @@ useEffect(() => {
     })();
   }, []);
 
-  // ── Fetch last 6 days ─────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -388,14 +366,13 @@ useEffect(() => {
         const data: Last6DaysResponse = await res.json();
         setLast6DaysData(data);
       } catch (e: any) {
-        console.error('Failed to fetch last 6 days:', e);
+        console.error();//'Failed to fetch last 6 days:', e
       } finally {
         setLast6Loading(false);
       }
     })();
   }, []);
 
-  // ── Fetch earnings ────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -413,7 +390,6 @@ useEffect(() => {
     })();
   }, []);
 
-  // ── Fetch dividends ───────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -431,7 +407,6 @@ useEffect(() => {
     })();
   }, []);
 
-  // ── Window/chart helpers ──────────────────────────────────────────────────
   const windowToKeys = useMemo<Record<number, { hKey: string; lKey: string }>>(() => {
     const map: Record<number, { hKey: string; lKey: string }> = {};
     for (const r of rawData) {
@@ -477,36 +452,23 @@ useEffect(() => {
       prev.includes(menu) ? prev.filter(m => m !== menu) : [...prev, menu]
     );
 
-  const getSignalBadge = (signal: string, change: number) => {
-    const isAcc = signal === 'accumulation';
-    return (
-      <div className="flex flex-col items-end gap-0.5">
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isAcc ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'}`}>
-          {isAcc ? 'تجميع' : 'تصريف'}
-        </span>
-        <span className={`text-xs font-semibold ${isAcc ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-          {isAcc ? '+' : ''}{change}%
-        </span>
-      </div>
-    );
-  };
-
   const tickColor = isDark ? '#94a3b8' : '#64748b';
   const gridColor = isDark ? '#334155' : '#e2e8f0';
 
-  // Format last refreshed time
   const refreshedLabel = lastRefreshed
     ? `${String(lastRefreshed.getHours()).padStart(2,'0')}:${String(lastRefreshed.getMinutes()).padStart(2,'0')}`
     : null;
 
-  // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className={`min-h-screen flex flex-col ${isDark ? 'dark bg-slate-900' : 'bg-slate-50'}`} dir="rtl">
 
-      {/* Top Nav */}
+      {/* ── Top Nav ── */}
       <div className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-6 justify-between sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-3">
-          <button onClick={() => setIsDark(!isDark)} className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors">
+          <button
+            onClick={() => setIsDark(!isDark)}
+            className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
+          >
             {isDark ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
           </button>
           <button className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center transition-colors relative">
@@ -515,26 +477,49 @@ useEffect(() => {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
             )}
           </button>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              title="تسجيل الخروج"
+              className="w-10 h-10 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-center transition-colors text-red-500"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          )}
         </div>
-        <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">👋 أهلاً، حسن</span>
+
+        <span className="text-slate-700 dark:text-slate-300 font-semibold text-sm">
+          👋 أهلاً، {user?.full_name ?? user?.username ?? 'حسن'}
+          {isAdmin && (
+            <span className="mr-2 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full font-medium">
+              أدمن
+            </span>
+          )}
+        </span>
         <div className="w-24" />
       </div>
 
       <div className="flex flex-1">
 
-        {/* Sidebar */}
+        {/* ── Sidebar ── */}
         <aside className="w-64 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 flex flex-col py-4 px-3 gap-1 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto">
           <div className="px-4 pb-4 pt-1">
             <QafahLogo className="w-28 text-slate-800 dark:text-white" />
           </div>
+
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-semibold text-sm w-full">
             <Home className="w-4 h-4" /> لوحة التحكم
           </button>
+
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full">
             <Phone className="w-4 h-4" /> Calls
           </button>
+
           <div>
-            <button onClick={() => toggleMenu('portfolio')} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+            <button
+              onClick={() => toggleMenu('portfolio')}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
               <span className="flex items-center gap-3 text-sm"><PieChart className="w-4 h-4" /> محفظتي</span>
               {expandedMenus.includes('portfolio') ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
@@ -545,11 +530,16 @@ useEffect(() => {
               </div>
             )}
           </div>
+
           <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full">
             <Activity className="w-4 h-4" /> Indicators Alerts
           </button>
+
           <div>
-            <button onClick={() => toggleMenu('education')} className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+            <button
+              onClick={() => toggleMenu('education')}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
               <span className="flex items-center gap-3 text-sm"><GraduationCap className="w-4 h-4" /> التعليم</span>
               {expandedMenus.includes('education') ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
@@ -561,16 +551,40 @@ useEffect(() => {
               </div>
             )}
           </div>
-          <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full mt-auto">
-            <Settings className="w-4 h-4" /> Settings
-          </button>
+
+          {/* ── Bottom actions ── */}
+          <div className="mt-auto flex flex-col gap-1">
+
+            {/* Switch to Admin — only visible to admins */}
+            {isAdmin && (
+              <button
+                onClick={() => navigate('admin')}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 text-sm w-full transition-colors font-medium"
+              >
+                <Shield className="w-4 h-4" /> لوحة المسؤول
+              </button>
+            )}
+
+            <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm w-full transition-colors">
+              <Settings className="w-4 h-4" /> Settings
+            </button>
+
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm w-full transition-colors"
+              >
+                <LogOut className="w-4 h-4" /> تسجيل الخروج
+              </button>
+            )}
+          </div>
         </aside>
 
-        {/* Main */}
+        {/* ── Main ── */}
         <main className="flex-1 p-6 overflow-auto">
           <div className="grid grid-cols-3 gap-6 mb-6">
 
-            {/* ── Chart Card ── */}
+            {/* Chart Card */}
             <div className="col-span-2 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -599,7 +613,7 @@ useEffect(() => {
               <div className="h-64 w-full">
                 {loading ? (
                   <div className="h-full flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                    <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
                   </div>
                 ) : apiError ? (
                   <div className="h-full flex items-center justify-center text-xs text-red-500">خطأ: {apiError}</div>
@@ -610,21 +624,38 @@ useEffect(() => {
                     <AreaChart data={rechartsData} margin={{ top: 20, right: 16, left: 0, bottom: 20 }} onContextMenu={(_, e) => e.preventDefault()}>
                       <defs>
                         <linearGradient id="colorQL" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
                         </linearGradient>
                         <linearGradient id="colorHigh" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-                      <XAxis dataKey="date" ticks={xTicks} tickFormatter={formatXAxis} tick={{ fontSize: 11, fill: tickColor }} axisLine={{ stroke: gridColor }} tickLine={false} label={{ value: 'التاريخ', position: 'insideBottom', offset: -12, fontSize: 11, fill: tickColor }} />
-                      <YAxis tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} width={52} label={{ value: 'إجمالي الصاعد', angle: -90, position: 'insideLeft', offset: 14, fontSize: 11, fill: tickColor }} />
-                      <Tooltip content={<CustomTooltip windowIndex={windowIndex} hKey={hKey} lKey={lKey} />} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }} />
-                      <Area type="monotone" dataKey="QL" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorQL)" isAnimationActive={false} dot={false} />
-                      <Area type="stepAfter" dataKey={hKey} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="7 4" fill="none" isAnimationActive={false} dot={false} />
-                      <Area type="stepAfter" dataKey={lKey} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="7 4" strokeOpacity={0.55} fill="none" isAnimationActive={false} dot={false} />
+                      <XAxis
+                        dataKey="date"
+                        ticks={xTicks}
+                        tickFormatter={formatXAxis}
+                        tick={{ fontSize: 11, fill: tickColor }}
+                        axisLine={{ stroke: gridColor }}
+                        tickLine={false}
+                        label={{ value: 'التاريخ', position: 'insideBottom', offset: -12, fontSize: 11, fill: tickColor }}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: '#00000000' }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={52}
+                        label={{ value: 'إجمالي الصاعد', angle: -90, position: 'insideLeft', offset: 14, fontSize: 11, fill: '#00000000' }}
+                      />
+                      <Tooltip
+                        content={() => null}/*<CustomTooltip windowIndex={windowIndex} hKey={hKey} lKey={lKey} />}*/
+                        cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }}
+                      />
+                      <Area type="monotone" dataKey="QL" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#colorQL)" isAnimationActive={false} dot={false} />
+                      <Area type="stepAfter" dataKey={hKey} stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="7 4" fill="none" isAnimationActive={false} dot={false} />
+                      <Area type="stepAfter" dataKey={lKey} stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="7 4" strokeOpacity={0.55} fill="none" isAnimationActive={false} dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 )}
@@ -638,7 +669,7 @@ useEffect(() => {
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">آخر 6 أيام</p>
                 {last6Loading ? (
                   <div className="flex items-center justify-center h-16">
-                    <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                    <Loader2 className="w-4 h-4 text-purple-500 animate-spin" />
                   </div>
                 ) : last6Days.length === 0 ? (
                   <div className="text-xs text-slate-400">لا توجد بيانات</div>
@@ -646,7 +677,11 @@ useEffect(() => {
                   <div className="flex gap-2 justify-between w-full">
                     {getLast6DaysWithNames(last6Days).map((item, i) => (
                       <div key={i} className="flex flex-col items-center gap-2 flex-1">
-                        {item.day.direction === 'up' ? <UpTriangle /> : item.day.direction === 'down' ? <DownTriangle /> : <NeutralCircle />}
+                        {item.day.direction === 'up'
+                          ? <UpTriangle />
+                          : item.day.direction === 'down'
+                          ? <DownTriangle />
+                          : <NeutralCircle />}
                         <p className="text-xs text-slate-600 dark:text-slate-400 font-medium text-center">{item.arName}</p>
                       </div>
                     ))}
@@ -655,59 +690,49 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* My List */}
+            {/* قائمتي */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-4">
                 <button className="text-xs text-blue-500 hover:text-blue-600 font-medium">إدارة القائمة ←</button>
                 <h2 className="font-bold text-slate-800 dark:text-white text-base">قائمتي</h2>
               </div>
               <div className="flex flex-col gap-2">
-                {myListCompanies.map((c) => (
-                 <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
-  <div className="flex items-center justify-between mb-4">
-    <button className="text-xs text-blue-500 hover:text-blue-600 font-medium">إدارة القائمة ←</button>
-    <h2 className="font-bold text-slate-800 dark:text-white text-base">قائمتي</h2>
-  </div>
-  <div className="flex flex-col gap-2">
-    {myListLoading ? (
-      Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
-    ) : myListData.map((c, idx) => {
-      const isAccum = c.load_level_state === 'accumulation' || c.load_level_state === 'pre-accumulation';
-      const dir = c.load_direction;
-      return (
-        <div key={c.holding_ticker} className="flex items-center justify-between py-2 border-b border-slate-50 dark:border-slate-700 last:border-0">
-          {/* Signal + direction */}
-          <div className="flex flex-col items-end gap-0.5">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              isAccum
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-            }`}>
-              {isAccum ? 'تجميع' : 'تصريف'}
-            </span>
-            <span className={`text-xs font-semibold ${
-              dir > 0 ? 'text-green-600 dark:text-green-400'
-              : dir < 0 ? 'text-red-600 dark:text-red-400'
-              : 'text-slate-400'
-            }`}>
-              {dir > 0 ? '+' : ''}{dir}
-            </span>
-          </div>
-          {/* Logo + name */}
-          <div className="flex items-center gap-2">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-slate-800 dark:text-white">{c.holding_ticker}</p>
-              <p className="text-xs text-slate-400">{c.DiffCategory_1d}</p>
-            </div>
-            <CompanyLogo ticker={c.holding_ticker} />
-            <span className="text-xs text-slate-300 dark:text-slate-600 w-4 text-center">{idx + 1}</span>
-          </div>
-        </div>
-      );
-    })}
-  </div>
-</div>
-                ))}
+                {myListLoading ? (
+                  Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
+                ) : myListData.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">لا توجد بيانات</p>
+                ) : (
+                  myListData.map((c, idx) => {
+                    const isAccum = c.load_level_state === 'accumulation' || c.load_level_state === 'pre-accumulation';
+                    const dir = c.load_direction;
+                    return (
+                      <div key={c.holding_ticker} className="flex items-center gap-3 py-2">
+                        <span className="text-xs text-slate-500 w-4 text-center shrink-0">{idx + 1}</span>
+                        <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                          <CompanyLogo ticker={c.holding_ticker} />
+                        </div>
+                        <div className="flex-1 min-w-0 flex flex-col justify-center">
+                          <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{c.holding_ticker}</p>
+                          <p className="text-xs text-slate-400 truncate">{c.DiffCategory_1d}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            isAccum
+                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          }`}>
+                            {isAccum ? 'تجميع' : 'تصريف'}
+                          </span>
+                          <span className={`text-xs font-bold ${
+                            dir > 0 ? 'text-green-500' : dir < 0 ? 'text-red-500' : 'text-slate-400'
+                          }`}>
+                            {dir > 0 ? '+' : ''}{dir}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -715,7 +740,7 @@ useEffect(() => {
           {/* Bottom Grid */}
           <div className="grid grid-cols-3 gap-6">
 
-            {/* ── LIVE Earnings ─────────────────────────────────────────── */}
+            {/* Earnings */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-semibold">
@@ -723,7 +748,6 @@ useEffect(() => {
                 </span>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">إعلانات الأرباح</h3>
               </div>
-
               <div className="flex flex-col gap-3 mt-4">
                 {earningsLoading ? (
                   Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
@@ -752,7 +776,7 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* ── LIVE Dividends ────────────────────────────────────────── */}
+            {/* Dividends */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-semibold">
@@ -760,7 +784,6 @@ useEffect(() => {
                 </span>
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">التوزيعات النقدية</h3>
               </div>
-
               <div className="flex flex-col gap-3 mt-4">
                 {dividendsLoading ? (
                   Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
@@ -786,16 +809,13 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* ── LIVE Alerts (from /api/alerts) ───────────────────────── */}
+            {/* Alerts */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex flex-col">
-              {/* Header */}
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  {/* Count badge */}
                   <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full font-semibold">
                     {alertsLoading ? '…' : `${alertsData.length} إشارة`}
                   </span>
-                  {/* Manual refresh button */}
                   <button
                     onClick={() => fetchAlerts(true)}
                     disabled={isRefreshing}
@@ -808,14 +828,12 @@ useEffect(() => {
                 <h3 className="font-bold text-slate-800 dark:text-white text-sm">التنبيهات والإشارات</h3>
               </div>
 
-              {/* Last refreshed timestamp */}
               {refreshedLabel && (
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 text-left mb-2 leading-none">
                   آخر تحديث: {refreshedLabel}
                 </p>
               )}
 
-              {/* Scrollable list */}
               <div className="flex flex-col gap-2 mt-1 overflow-y-auto max-h-64 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-600">
                 {alertsLoading ? (
                   Array.from({ length: 3 }).map((_, i) => <AlertSkeletonRow key={i} />)
@@ -831,12 +849,8 @@ useEffect(() => {
                         key={`${alert.ticker}-${alert.alert_time}-${idx}`}
                         className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                       >
-                        {/* Logo */}
                         <CompanyLogo ticker={alert.ticker} />
-
-                        {/* Content */}
                         <div className="flex-1 min-w-0">
-                          {/* Row 1: ticker + frame badge + time */}
                           <div className="flex items-center justify-between gap-1 mb-0.5">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="text-sm font-bold text-slate-800 dark:text-white leading-tight shrink-0">
@@ -849,8 +863,6 @@ useEffect(() => {
                               <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">{timePart}</p>
                             </div>
                           </div>
-
-                          {/* Row 2: filter as رسالة */}
                           <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug line-clamp-2">
                             {alert.filter}
                           </p>

@@ -4,35 +4,17 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Users,
-  Package,
-  TrendingUp,
-  DollarSign,
-  Search,
-  Filter,
-  Edit,
-  Trash2,
-  LogOut,
-  Menu,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  UserPlus,
-  Settings,
-  Bell,
-  Briefcase
+  Users, Package, TrendingUp, DollarSign, Search, Filter,
+  Edit, Trash2, LogOut, Menu, X, ChevronLeft, ChevronRight,
+  UserPlus, Settings, Bell, Briefcase, AlertCircle, LayoutDashboard, Shield,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   navigate?: (page: string) => void;
+  onLogout?: () => void;
 }
 
 const stats = [
@@ -63,151 +45,156 @@ const packageDistribution = [
   { name: 'بلاتينية', count: 868, percentage: 16 },
 ];
 
-export function AdminDashboard({ navigate }: AdminDashboardProps) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+const NAV_ITEMS = [
+  { id: 'overview', label: 'نظرة عامة', icon: TrendingUp },
+  { id: 'users',    label: 'المستخدمين', icon: Users },
+  { id: 'packages', label: 'الباقات',    icon: Package },
+  { id: 'adjustments', label: 'التعديلات', icon: Settings },
+];
+
+export function AdminDashboard({ navigate, onLogout }: AdminDashboardProps) {
+  const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const [activeTab, setActiveTab]       = useState('overview');
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'نشط':
-        return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">نشط</Badge>;
-      case 'منتهي':
-        return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">منتهي</Badge>;
-      case 'معلق':
-        return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">معلق</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+      case 'نشط':   return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">نشط</Badge>;
+      case 'منتهي': return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">منتهي</Badge>;
+      default:      return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
   const getPackageBadge = (pkg: string) => {
     switch (pkg) {
-      case 'بلاتينية':
-        return <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">بلاتينية</Badge>;
-      case 'ذهبية':
-        return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">ذهبية</Badge>;
-      case 'فضية':
-        return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">فضية</Badge>;
-      case 'مجانية':
-        return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">مجانية</Badge>;
-      default:
-        return <Badge variant="secondary">{pkg}</Badge>;
+      case 'بلاتينية': return <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100">بلاتينية</Badge>;
+      case 'ذهبية':    return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">ذهبية</Badge>;
+      case 'فضية':     return <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">فضية</Badge>;
+      case 'مجانية':   return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">مجانية</Badge>;
+      default:         return <Badge variant="secondary">{pkg}</Badge>;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Sidebar */}
-      <aside className={`fixed top-0 right-0 z-40 h-screen transition-transform ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} w-64 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700`}>
-        <div className="h-full flex flex-col">
-          {/* Logo */}
-          <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="قافة" className="h-10 w-auto" />
-            </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden">
-              <X className="w-5 h-5 text-slate-500" />
-            </button>
-          </div>
+    // ── Outer shell: full screen flex row (RTL so sidebar is on the right)
+    <div className="min-h-screen flex bg-slate-50 dark:bg-slate-900" dir="rtl">
 
-          {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-1">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === 'overview'
-                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              <TrendingUp className="w-5 h-5" />
-              <span>نظرة عامة</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === 'users'
-                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              <Users className="w-5 h-5" />
-              <span>المستخدمين</span>
-            </button>
-            <button
-              onClick={() => navigate?.('admin-employees')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-            >
-              <Briefcase className="w-5 h-5" />
-              <span>الموظفين</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('packages')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === 'packages'
-                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              <Package className="w-5 h-5" />
-              <span>الباقات</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('adjustments')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === 'adjustments'
-                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              <Settings className="w-5 h-5" />
-              <span>التعديلات</span>
-            </button>
-          </nav>
+      {/* ══ SIDEBAR ══════════════════════════════════════════════════════════ */}
+      {/* Uses flex-shrink-0 so it never collapses. Hidden via w-0 / overflow-hidden when closed. */}
+      <aside
+        className={`
+          flex-shrink-0 flex flex-col
+          bg-white dark:bg-slate-800
+          border-l border-slate-200 dark:border-slate-700
+          transition-all duration-300 overflow-hidden
+          ${sidebarOpen ? 'w-64' : 'w-0'}
+        `}
+      >
+        {/* Logo */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-slate-200 dark:border-slate-700 min-w-[16rem]">
+          <img src="https://app.qafah.com/static/logo.png" alt="قافة" className="h-10 w-auto" />
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
 
-          {/* Bottom */}
-          <div className="p-4 border-t border-slate-200 dark:border-slate-700">
-            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-              <LogOut className="w-5 h-5" />
-              <span>تسجيل الخروج</span>
+        {/* Nav */}
+        <nav className="flex-1 p-4 space-y-1 min-w-[16rem]">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm ${
+                activeTab === id
+                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-medium'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+            >
+              <Icon className="w-5 h-5 shrink-0" />
+              <span>{label}</span>
             </button>
-          </div>
+          ))}
+
+          <button
+            onClick={() => navigate?.('admin-employees')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm"
+          >
+            <Briefcase className="w-5 h-5 shrink-0" />
+            <span>الموظفين</span>
+          </button>
+
+          {/* ── Go to User Dashboard ── */}
+          <button
+            onClick={() => navigate?.('dashboard')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-sm font-medium"
+          >
+            <LayoutDashboard className="w-5 h-5 shrink-0" />
+            <span>لوحة المستخدم</span>
+          </button>
+        </nav>
+
+        {/* Logout */}
+        <div className="p-4 border-t border-slate-200 dark:border-slate-700 min-w-[16rem]">
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm"
+          >
+            <LogOut className="w-5 h-5 shrink-0" />
+            <span>تسجيل الخروج</span>
+          </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className={`transition-all ${isSidebarOpen ? 'mr-64' : 'mr-0'}`}>
+      {/* ══ MAIN CONTENT ═════════════════════════════════════════════════════ */}
+      <div className="flex-1 flex flex-col min-w-0">
+
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               >
                 <Menu className="w-5 h-5 text-slate-600 dark:text-slate-300" />
               </button>
-              <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-                لوحة التحكم
-              </h1>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white">لوحة التحكم</h1>
             </div>
-            <div className="flex items-center gap-4">
+
+            <div className="flex items-center gap-3">
+              {/* Quick link to user dashboard */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate?.('dashboard')}
+                className="text-blue-600 border-blue-200 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900/20 gap-2 text-xs"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                لوحة المستخدم
+              </Button>
               <button className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors relative">
                 <Bell className="w-5 h-5 text-slate-600 dark:text-slate-300" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
               </button>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-bold">
+              <button
+                onClick={() => setShowLogoutConfirm(true)}
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold hover:opacity-90 transition-opacity"
+              >
                 أد
-              </div>
+              </button>
             </div>
           </div>
         </header>
 
-        {/* Content */}
-        <div className="p-6">
+        {/* Page content */}
+        <div className="flex-1 p-6 overflow-auto" dir="rtl">
+
+          {/* ── Overview ── */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* Stats */}
               <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {stats.map((stat) => (
                   <Card key={stat.name}>
@@ -226,24 +213,17 @@ export function AdminDashboard({ navigate }: AdminDashboardProps) {
                   </Card>
                 ))}
               </div>
-
-              {/* Package Distribution */}
               <Card>
-                <CardHeader>
-                  <CardTitle>توزيع الباقات</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>توزيع الباقات</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     {packageDistribution.map((pkg) => (
                       <div key={pkg.name} className="flex items-center gap-4">
                         <span className="w-20 text-sm text-slate-600 dark:text-slate-400">{pkg.name}</span>
                         <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-purple-600 rounded-full"
-                            style={{ width: `${pkg.percentage}%` }}
-                          />
+                          <div className="h-full bg-purple-600 rounded-full" style={{ width: `${pkg.percentage}%` }} />
                         </div>
-                        <span className="w-16 text-sm text-slate-900 dark:text-white text-left">{pkg.count}</span>
+                        <span className="w-12 text-sm text-slate-900 dark:text-white text-left">{pkg.count}</span>
                       </div>
                     ))}
                   </div>
@@ -252,27 +232,21 @@ export function AdminDashboard({ navigate }: AdminDashboardProps) {
             </div>
           )}
 
+          {/* ── Users ── */}
           {activeTab === 'users' && (
             <div className="space-y-6">
-              {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-4 justify-between">
                 <div className="flex gap-4 flex-1">
                   <div className="relative flex-1 max-w-md">
-                    <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                     <Input placeholder="البحث عن مستخدم..." className="pr-10" />
                   </div>
-                  <Button variant="outline">
-                    <Filter className="w-4 h-4 ml-2" />
-                    تصفية
-                  </Button>
+                  <Button variant="outline"><Filter className="w-4 h-4 ml-2" />تصفية</Button>
                 </div>
                 <Button className="bg-purple-600 hover:bg-purple-700">
-                  <UserPlus className="w-4 h-4 ml-2" />
-                  إضافة مستخدم
+                  <UserPlus className="w-4 h-4 ml-2" />إضافة مستخدم
                 </Button>
               </div>
-
-              {/* Users Table */}
               <Card>
                 <CardContent className="p-0">
                   <Table>
@@ -315,28 +289,21 @@ export function AdminDashboard({ navigate }: AdminDashboardProps) {
                   </Table>
                 </CardContent>
               </Card>
-
-              {/* Pagination */}
               <div className="flex items-center justify-between">
                 <p className="text-sm text-slate-500">عرض 1-5 من 5,234 مستخدم</p>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled>
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
+                  <Button variant="outline" size="sm" disabled><ChevronRight className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="sm"><ChevronLeft className="w-4 h-4" /></Button>
                 </div>
               </div>
             </div>
           )}
 
+          {/* ── Adjustments ── */}
           {activeTab === 'adjustments' && (
             <div className="space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle>سجل التعديلات</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>سجل التعديلات</CardTitle></CardHeader>
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader>
@@ -353,7 +320,7 @@ export function AdminDashboard({ navigate }: AdminDashboardProps) {
                     <TableBody>
                       {recentAdjustments.map((adj) => (
                         <TableRow key={adj.id}>
-                          <TableCell className="font-medium text-slate-900 dark:text-white">{adj.user}</TableCell>
+                          <TableCell className="font-medium">{adj.user}</TableCell>
                           <TableCell>{adj.type}</TableCell>
                           <TableCell className="text-slate-500">{adj.oldValue}</TableCell>
                           <TableCell className="text-green-600">{adj.newValue}</TableCell>
@@ -369,7 +336,30 @@ export function AdminDashboard({ navigate }: AdminDashboardProps) {
             </div>
           )}
         </div>
-      </main>
+      </div>
+
+      {/* ══ Logout Confirm Modal ══════════════════════════════════════════════ */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4 text-right">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-lg">تسجيل الخروج</h3>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 mb-6 text-sm">
+              هل أنت متأكد أنك تريد تسجيل الخروج؟
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => setShowLogoutConfirm(false)}>إلغاء</Button>
+              <Button variant="destructive" onClick={() => { setShowLogoutConfirm(false); onLogout?.(); }}>
+                <LogOut className="w-4 h-4 ml-2" />تسجيل الخروج
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
