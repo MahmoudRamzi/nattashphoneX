@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 
-// ── Update this to match your actual backend base ────────────────────────────
 const API_BASE = 'https://app.qafah.com';
 
 export interface AuthUser {
@@ -73,7 +72,7 @@ export function getRoleHomePage(role: AuthUser['role']): string {
   }
 }
 
-// ── Try to fetch /auth/me with a Bearer token ────────────────────────────────
+// ── Fetch /auth/me with Bearer token ─────────────────────────────────────────
 async function fetchMe(token: string): Promise<AuthUser | null> {
   try {
     const res = await fetch(`${API_BASE}/auth/me`, {
@@ -94,20 +93,18 @@ async function fetchMe(token: string): Promise<AuthUser | null> {
   }
 }
 
-// ── Parse an error message out of any response shape ────────────────────────
+// ── Parse error message from any response shape ───────────────────────────────
 async function extractErrorMessage(res: Response): Promise<string> {
   const FALLBACK = 'اسم المستخدم أو كلمة المرور غير صحيحة';
   try {
     const ct = res.headers.get('content-type') ?? '';
     if (ct.includes('application/json')) {
       const body = await res.json();
-      // FastAPI validation errors come as { detail: [...] } or { detail: "string" }
       if (typeof body?.detail === 'string') return body.detail;
       if (Array.isArray(body?.detail)) return body.detail.map((d: any) => d.msg).join(', ');
       if (typeof body?.error === 'string') return body.error;
       if (typeof body?.message === 'string') return body.message;
     }
-    // HTML / redirect response — status tells us enough
     if (res.status === 401 || res.status === 403 || res.status === 400) return FALLBACK;
     if (res.status >= 500) return 'خطأ في الخادم، يرجى المحاولة لاحقاً';
   } catch {
@@ -143,88 +140,65 @@ export function useAuth() {
   ): Promise<{ success: boolean; role?: AuthUser['role']; error?: string }> => {
     setState(s => ({ ...s, isLoading: true, error: null }));
 
-    try {
-      const formData = new URLSearchParams();
-      formData.append('username', username);
-      formData.append('password', password);
-      formData.append('next', '/');
+    const formBody = new URLSearchParams({ username, password }).toString();
 
+    try {
+      // ── Step 1: try /auth/token ──────────────────────────────────────
       const res = await fetch(`${API_BASE}/auth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-        // ⚠️ Do NOT follow redirects automatically — a 302 here means login failed
-        // (FastAPI cookie flow redirects on both success and failure via HTML)
-        redirect: 'manual',
+        body: formBody,
       });
 
-      const contentType = res.headers.get('content-type') ?? '';
       let token: string | null = null;
       let user: AuthUser | null = null;
 
-      // ── Case 1: backend returns JSON with access_token ────────────────────
-      if (contentType.includes('application/json') && res.type !== 'opaqueredirect') {
-        if (!res.ok) {
-          const msg = await extractErrorMessage(res);
-          setState(s => ({ ...s, isLoading: false, error: msg }));
-          return { success: false, error: msg };
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') ?? '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          token = data.access_token ?? data.token ?? null;
         }
-
-        const data = await res.json();
-        token = data.access_token ?? data.token ?? null;
-
-        if (token) {
-          const payload = decodeJWT(token);
-          user = {
-            username:  payload?.sub       ?? username,
-            role:      payload?.role      ?? 'user',
-            email:     payload?.email,
-            full_name: payload?.full_name,
-            due_date:  payload?.due_date,
-            is_active: payload?.is_active ?? true,
-          };
-        }
+      } else if (res.status === 400 || res.status === 401 || res.status === 403) {
+        const msg = await extractErrorMessage(res);
+        setState(s => ({ ...s, isLoading: false, error: msg }));
+        return { success: false, error: msg };
       }
 
-      // ── Case 2: opaque redirect or HTML response ──────────────────────────
-      // Backend uses cookie-based flow (302 redirect). We try the JSON endpoint.
-      else {
-        // A redirect on the /auth/token endpoint almost always means wrong creds
-        // (success would have returned JSON or a specific redirect we can detect).
-        // Try the dedicated JSON endpoint first.
+      // ── Step 2: if no token yet, try /auth/token-json ────────────────
+      if (!token) {
         const jsonRes = await fetch(`${API_BASE}/auth/token-json`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData.toString(),
+          body: formBody,
         });
 
         if (jsonRes.ok) {
           const data = await jsonRes.json().catch(() => ({}));
           token = data.access_token ?? data.token ?? null;
-
-          if (token) {
-            const payload = decodeJWT(token);
-            user = {
-              username:  payload?.sub       ?? username,
-              role:      payload?.role      ?? 'user',
-              email:     payload?.email,
-              full_name: payload?.full_name,
-              due_date:  payload?.due_date,
-              is_active: payload?.is_active ?? true,
-            };
-          }
         } else {
-          // /auth/token-json explicitly rejected → wrong credentials
           const msg = await extractErrorMessage(jsonRes);
           setState(s => ({ ...s, isLoading: false, error: msg }));
           return { success: false, error: msg };
         }
+      }
 
-        if (!user) {
-          const msg = 'تعذّر تسجيل الدخول — تأكد من صحة البيانات وحاول مجدداً';
-          setState(s => ({ ...s, isLoading: false, error: msg }));
-          return { success: false, error: msg };
-        }
+      // ── Step 3: decode user from JWT payload ─────────────────────────
+      if (token) {
+        const payload = decodeJWT(token);
+        user = {
+          username:  payload?.sub       ?? username,
+          role:      payload?.role      ?? 'user',
+          email:     payload?.email,
+          full_name: payload?.full_name,
+          due_date:  payload?.due_date,
+          is_active: payload?.is_active ?? true,
+        };
+      }
+
+      // ── Step 4: fallback — fetch /auth/me with Bearer token ──────────
+      if (!user && token) {
+        user = await fetchMe(token);
       }
 
       if (!user) {
@@ -280,17 +254,14 @@ export function useAuth() {
   }, []);
 
   // ── Logout ─────────────────────────────────────────────────────────────────
-  // Backend defines logout as @app.get("/logout") → use GET, not POST
   const logout = useCallback(async () => {
     const token = state.token;
     clearSession();
 
     try {
-      const url = new URL(`${API_BASE}/logout`);
-      await fetch(url.toString(), {
+      await fetch(`${API_BASE}/logout`, {
         method: 'GET',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-        redirect: 'manual', // ignore the 302 redirect back to /login
       });
     } catch {
       // ignore — local session already cleared

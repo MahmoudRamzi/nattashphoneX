@@ -21,17 +21,20 @@ import { LeaderboardPage } from '@/pages/LeaderboardPage';
 import { AdminEmployees } from '@/pages/AdminEmployees';
 import { CompaniesAccumulationPage } from '@/pages/CompaniesAccumulationPage';
 import { PreMarketServices } from '@/pages/PreMarketServices';
+import TickerResellSignalsPage from '@/pages/TickerResellSignalsPage';
 import { useAuth, getRoleHomePage } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 
 export type Page =
   | 'home' | 'login' | 'register' | 'pricing' | 'education'
   | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
-  | 'admin-employees' | 'companies-accumulation' | 'premarket';
+  | 'admin-employees' | 'companies-accumulation' | 'premarket'
+  | 'ticker-resell-signals';
 
 const PROTECTED_PAGES: Page[] = [
   'dashboard', 'alerts', 'employee', 'leaderboard',
   'admin', 'admin-employees', 'companies-accumulation', 'premarket',
+  'ticker-resell-signals',
 ];
 const ADMIN_ONLY_PAGES: Page[] = ['admin', 'admin-employees'];
 const STAFF_ROLES = ['market_supervisor', 'us_market_supervisor', 'employee', 'admin'];
@@ -186,7 +189,7 @@ function App() {
       return <AdminEmployees navigate={(p) => navigate(p as Page)} onLogout={handleLogout} />;
 
     case 'companies-accumulation':
-      return <CompaniesAccumulationPage />;
+      return <CompaniesAccumulationPage navigate={navigate} onLogout={handleLogout} user={user} />;
 
     case 'premarket':
       return <PreMarketServices navigate={(p) => navigate(p as Page)} />;
@@ -202,6 +205,9 @@ function App() {
 
     case 'leaderboard':
       return <LeaderboardPage navigate={navigate} />;
+
+    case 'ticker-resell-signals':
+      return <TickerResellSignalsPage />;
 
     default:
       return <HomePage isDark={isDark} toggleTheme={toggleTheme} navigate={navigate} />;

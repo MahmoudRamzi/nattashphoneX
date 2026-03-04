@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import type { AuthUser } from '@/hooks/useAuth';
 
-type Page = 'home' | 'login' | 'register' | 'pricing' | 'education' | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard' | 'admin-employees' | 'companies-accumulation' | 'premarket';
+type Page = 'home' | 'login' | 'register' | 'pricing' | 'education' | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard' | 'admin-employees' | 'companies-accumulation' | 'premarket'  | 'ticker-resell-signals';  // ← add this
+
 
 interface LoginProps {
   navigate: (page: Page) => void;
