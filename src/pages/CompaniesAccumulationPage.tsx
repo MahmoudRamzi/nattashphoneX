@@ -340,7 +340,7 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
 type Page =
   | 'home' | 'login' | 'register' | 'pricing' | 'education'
   | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
-  | 'admin-employees' | 'companies-accumulation' | 'premarket';
+| 'admin-employees' | 'companies-accumulation' | 'premarket' | 'ticker-resell-signals';
 
 interface CompaniesAccumulationPageProps {
   navigate: (page: Page) => void;   // required — needed for sidebar navigation
@@ -366,6 +366,8 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
   const [historyFn,  setHistoryFn]  = useState<(t: string) => HistoryRow[]>(() => () => []);
 
   const [showDropdown, setShowDropdown] = useState(false);
+  // ── CHANGE 1: new signal filter state (line 287) ──
+  const [signalFilter, setSignalFilter] = useState<'all' | 'accum' | 'distrib'>('all');
 
   const searchedTickerData = useTickerSearch(searchQuery);
   const stockStats = useStockStats(selectedCompany?.ticker);
@@ -396,7 +398,15 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
     setSelectedCompany(first ?? null);
   }, [selectedCategory, byCategory]);
 
-  const allInCategory = byCategory[selectedCategory] ?? [];
+  // ── CHANGE 2: filter allInCategory by signalFilter (line 289 replaced) ──
+  const allInCategory = (byCategory[selectedCategory] ?? []).filter(company => {
+    if (signalFilter === 'all') return true;
+    const isAccum = ['accumulation', 'pre-accumulation'].includes(company.signal);
+    if (signalFilter === 'accum') return isAccum;
+    if (signalFilter === 'distrib') return !isAccum;
+    return true;
+  });
+
   const counts = { continuous: byCategory.continuous.length, sub: byCategory.sub.length, change: byCategory.change.length };
   const historyRows: HistoryRow[] = selectedCompany ? historyFn(selectedCompany.ticker) : [];
 
@@ -533,19 +543,6 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
                       </div>
                   }
 
-                  {/* Live market stats */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { label: 'حجم الشراء',    val: stockStats.bidVolume, bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600' },
-                      { label: 'حجم البيع',     val: stockStats.askVolume, bg: 'bg-red-50 border-red-100',         text: 'text-red-600'     },
-                      { label: 'التدفق الصافي', val: stockStats.netFlow,   bg: 'bg-purple-50 border-purple-100',   text: 'text-purple-600'  },
-                    ].map(s => (
-                      <div key={s.label} className={`${s.bg} border rounded-xl p-3 text-center`}>
-                        <p className="text-xs text-slate-500 mb-1">{s.label}</p>
-                        <p className={`font-bold text-sm ${s.text} ${stockStats.loading ? 'animate-pulse' : ''}`}>{s.val}</p>
-                      </div>
-                    ))}
-                  </div>
 
                   {/* Action buttons */}
                   <div className="grid grid-cols-4 gap-2">
@@ -624,6 +621,23 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
                 {showDropdown && searchQuery.trim() && dropdownResults.length === 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 border border-slate-200 rounded-lg bg-white shadow-lg z-50 p-3 text-center text-sm text-slate-500">لا توجد نتائج</div>
                 )}
+              </div>
+
+              {/* ── CHANGE 3: Signal sub-filter buttons (after line 383) ── */}
+              <div className="flex gap-1.5 mb-3">
+                {([
+                  { key: 'all',     label: 'الكل',   color: 'bg-slate-700 text-white',   inactive: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'    },
+                  { key: 'accum',   label: 'تجميع', color: 'bg-emerald-600 text-white', inactive: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50' },
+                  { key: 'distrib', label: 'تصريف', color: 'bg-red-500 text-white',     inactive: 'bg-white text-red-600 border border-red-200 hover:bg-red-50'            },
+                ] as const).map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setSignalFilter(f.key)}
+                    className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg transition-all ${signalFilter === f.key ? f.color : f.inactive}`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
 
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">

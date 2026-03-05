@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, TrendingUp, Bell, BarChart2, Clock } from 'lucide-react';
 
-const BASE = 'https://app.qafah.com';
+const BASE   = 'https://app.qafah.com';
 const TICKER = 'NVDA';
 
 const INTERVALS = [
@@ -11,46 +11,94 @@ const INTERVALS = [
   { label: '1h',  period: '1h',  limit: 100 },
   { label: '4h',  period: '4h',  limit: 100 },
   { label: '1d',  period: '1d',  limit: 60  },
-];
+] as const;
 
-const fmt = (v, d = 2) =>
+type Interval = typeof INTERVALS[number];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface OhlcBar {
+  time:  number | string;
+  open:  number | string;
+  high:  number | string;
+  low:   number | string;
+  close: number | string;
+}
+
+interface AlertItem {
+  filter:      string;
+  frame:       string;
+  datetime:    string;
+  close_price: number;
+  tp1:         number | null;
+  tp2:         number | null;
+  target:      string | null;
+  ric:         boolean;
+  bot:         string;
+  ticketno:    number | null;
+  details:     string | null;
+}
+
+interface PositionItem {
+  frames:   string;
+  P_OLD:    string | null;
+  P_NEW:    string;
+  datetime: string;
+}
+
+interface DetailData {
+  alerts:    AlertItem[];
+  positions: PositionItem[];
+}
+
+interface SignalRow {
+  holding_ticker: string;
+  [key: string]: unknown;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const fmt = (v: unknown, d = 2): string =>
   v == null || isNaN(Number(v)) ? '—' : Number(v).toFixed(d);
 
-async function apiFetch(path) {
+async function apiFetch<T = unknown>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
+  return r.json() as Promise<T>;
 }
 
 // Loads LightweightCharts v5 from unpkg and resolves with the LWC namespace
-function loadLWC() {
+function loadLWC(): Promise<any> {
   return new Promise((resolve) => {
-    if (window.LightweightCharts) return resolve(window.LightweightCharts);
+    if ((window as any).LightweightCharts) {
+      return resolve((window as any).LightweightCharts);
+    }
     const existing = document.getElementById('lwc-script');
     if (existing) {
       const poll = setInterval(() => {
-        if (window.LightweightCharts) { clearInterval(poll); resolve(window.LightweightCharts); }
+        if ((window as any).LightweightCharts) {
+          clearInterval(poll);
+          resolve((window as any).LightweightCharts);
+        }
       }, 30);
       return;
     }
-    const s = document.createElement('script');
-    s.id  = 'lwc-script';
-    s.src = 'https://unpkg.com/lightweight-charts@5.0.7/dist/lightweight-charts.standalone.production.js';
-    s.onload = () => resolve(window.LightweightCharts);
+    const s    = document.createElement('script');
+    s.id       = 'lwc-script';
+    s.src      = 'https://unpkg.com/lightweight-charts@5.0.7/dist/lightweight-charts.standalone.production.js';
+    s.onload   = () => resolve((window as any).LightweightCharts);
     document.head.appendChild(s);
   });
 }
 
 // ── Candlestick chart ─────────────────────────────────────────────────────────
-function CandlestickChart({ ohlc, loading }) {
-  const containerRef = useRef(null);
-  const chartRef     = useRef(null);
-  const seriesRef    = useRef(null);
+function CandlestickChart({ ohlc, loading }: { ohlc: OhlcBar[]; loading: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef     = useRef<any>(null);
+  const seriesRef    = useRef<any>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    loadLWC().then((LWC) => {
+    loadLWC().then((LWC: any) => {
       if (cancelled || !containerRef.current) return;
 
       const chart = LWC.createChart(containerRef.current, {
@@ -93,15 +141,17 @@ function CandlestickChart({ ohlc, loading }) {
       seriesRef.current = series;
 
       const ro = new ResizeObserver(() => {
-        chartRef.current?.applyOptions({ width: containerRef.current?.clientWidth ?? 600 });
+        chartRef.current?.applyOptions({
+          width: containerRef.current?.clientWidth ?? 600,
+        });
       });
       ro.observe(containerRef.current);
-      containerRef.current._ro = ro;
+      (containerRef.current as any)._ro = ro;
     });
 
     return () => {
       cancelled = true;
-      containerRef.current?._ro?.disconnect();
+      (containerRef.current as any)?._ro?.disconnect();
       chartRef.current?.remove();
       chartRef.current  = null;
       seriesRef.current = null;
@@ -113,15 +163,15 @@ function CandlestickChart({ ohlc, loading }) {
     if (!seriesRef.current || !ohlc?.length) return;
 
     const candles = ohlc
-      .map(b => ({
-        time:  typeof b.time === 'number' ? b.time : Math.floor(new Date(b.time).getTime() / 1000),
+      .map((b: OhlcBar) => ({
+        time:  typeof b.time === 'number' ? b.time : Math.floor(new Date(b.time as string).getTime() / 1000),
         open:  +b.open,
         high:  +b.high,
         low:   +b.low,
         close: +b.close,
       }))
-      .filter(b => b.time && !isNaN(b.open))
-      .sort((a, b) => a.time - b.time);
+      .filter((b: any) => b.time && !isNaN(b.open))
+      .sort((a: any, b: any) => a.time - b.time);
 
     seriesRef.current.setData(candles);
     chartRef.current?.timeScale().fitContent();
@@ -137,46 +187,65 @@ function CandlestickChart({ ohlc, loading }) {
           <RefreshCw className="w-6 h-6 animate-spin text-blue-400" />
         </div>
       )}
-      <div ref={containerRef} className="w-full rounded-xl overflow-hidden" style={{ minHeight: 360 }} />
+      <div
+        ref={containerRef}
+        className="w-full rounded-xl overflow-hidden"
+        style={{ minHeight: 360 }}
+      />
     </div>
   );
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-export default function AAPLDetailPage() {
-  const [signal,       setSignal]       = useState(null);
-  const [detail,       setDetail]       = useState(null);
-  const [ohlc,         setOhlc]         = useState([]);
-  const [activeIv,     setActiveIv]     = useState(INTERVALS.find(i => i.label === '1d'));
+export default function TickerResellSignalsPage() {
+  const [signal,       setSignal]       = useState<SignalRow | null>(null);
+  const [detail,       setDetail]       = useState<DetailData | null>(null);
+  const [ohlc,         setOhlc]         = useState<OhlcBar[]>([]);
+  const [activeIv,     setActiveIv]     = useState<Interval>(
+    INTERVALS.find(i => i.label === '1m') ?? INTERVALS[0]
+  );
   const [loading,      setLoading]      = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
-  const [error,        setError]        = useState(null);
+  const [error,        setError]        = useState<string | null>(null);
 
   const fetchMeta = useCallback(async () => {
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     try {
       const [signals, alerts, positions] = await Promise.all([
-        apiFetch(`/api/ticker_resell_signals?mode=cached`),
-        apiFetch(`/api/t_alerts?ticker=${TICKER}`),
-        apiFetch(`/positions?ticker=${TICKER}&limit=10`),
+        apiFetch<SignalRow[]>(`/api/ticker_resell_signals?mode=cached`),
+        apiFetch<AlertItem[]>(`/api/t_alerts?ticker=${TICKER}`),
+        apiFetch<PositionItem[]>(`/positions?ticker=${TICKER}&limit=10`),
       ]);
-      setSignal(Array.isArray(signals) ? signals.find(s => s.holding_ticker === TICKER) ?? null : null);
+      setSignal(
+        Array.isArray(signals)
+          ? (signals.find((s: SignalRow) => s.holding_ticker === TICKER) ?? null)
+          : null
+      );
       setDetail({ alerts, positions });
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const fetchOhlc = useCallback(async (iv) => {
+  const fetchOhlc = useCallback(async (iv: Interval) => {
     setChartLoading(true);
     try {
-      const data = await apiFetch(`/api/ohlc?ticker=${TICKER}&period=${iv.period}&limit=${iv.limit}`);
+      const data = await apiFetch<OhlcBar[]>(
+        `/api/ohlc?ticker=${TICKER}&period=${iv.period}&limit=${iv.limit}`
+      );
       setOhlc(Array.isArray(data) ? data : []);
-    } catch { setOhlc([]); }
-    finally { setChartLoading(false); }
+    } catch {
+      setOhlc([]);
+    } finally {
+      setChartLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchMeta(); }, []);
-  useEffect(() => { fetchOhlc(activeIv); }, [activeIv]);
+  useEffect(() => { fetchMeta(); }, [fetchMeta]);
+  useEffect(() => { fetchOhlc(activeIv); }, [activeIv, fetchOhlc]);
 
   return (
     <div
@@ -246,20 +315,25 @@ export default function AAPLDetailPage() {
                 <BarChart2 className="w-3.5 h-3.5 text-blue-400" /> بيانات الإشارة
               </h2>
               <div className="grid grid-cols-2 gap-x-6 text-xs">
-                {Object.entries(signal).filter(([k]) => k !== 'holding_ticker').map(([k, v]) => (
-                  <div key={k} className="flex justify-between border-b border-dashed border-slate-700/40 py-2">
-                    <span className="text-slate-500 truncate">{k}</span>
-                    <span className="font-medium text-slate-200 ml-2">
-                      {typeof v === 'number' ? fmt(v, 4) : String(v ?? '—')}
-                    </span>
-                  </div>
-                ))}
+                {Object.entries(signal)
+                  .filter(([k]) => k !== 'holding_ticker')
+                  .map(([k, v]) => (
+                    <div
+                      key={k}
+                      className="flex justify-between border-b border-dashed border-slate-700/40 py-2"
+                    >
+                      <span className="text-slate-500 truncate">{k}</span>
+                      <span className="font-medium text-slate-200 ml-2">
+                        {typeof v === 'number' ? fmt(v, 4) : String(v ?? '—')}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           )}
 
           {/* Position Changes */}
-          {detail?.positions?.length > 0 && (
+          {(detail?.positions?.length ?? 0) > 0 && (
             <div className="rounded-2xl border border-slate-700/40 bg-slate-900/60 p-5 shadow-xl">
               <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> تغييرات المركز
@@ -274,7 +348,7 @@ export default function AAPLDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.positions.map((p, i) => (
+                  {detail!.positions.map((p: PositionItem, i: number) => (
                     <tr key={i} className="border-t border-slate-800">
                       <td className="py-2 font-mono text-slate-300">{p.frames}</td>
                       <td className="py-2 text-slate-500">{p.P_OLD || '—'}</td>
@@ -294,14 +368,19 @@ export default function AAPLDetailPage() {
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
               <Bell className="w-3.5 h-3.5 text-amber-400" /> تنبيهات تيليغرام
             </h2>
-            {!detail?.alerts?.length ? (
+            {!(detail?.alerts?.length) ? (
               <p className="text-xs text-slate-500">لا توجد تنبيهات</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto pl-1">
-                {detail.alerts.map((a, i) => (
-                  <div key={i} className="rounded-xl border border-slate-700/40 bg-slate-800/60 px-4 py-3 text-xs">
+                {detail.alerts.map((a: AlertItem, i: number) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-slate-700/40 bg-slate-800/60 px-4 py-3 text-xs"
+                  >
                     <div className="flex justify-between mb-2 gap-2 flex-wrap">
-                      <span className="font-semibold text-slate-200">{a.filter} — {a.frame}</span>
+                      <span className="font-semibold text-slate-200">
+                        {a.filter} — {a.frame}
+                      </span>
                       <span className="text-slate-500 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {new Date(a.datetime).toLocaleString('ar-EG')}

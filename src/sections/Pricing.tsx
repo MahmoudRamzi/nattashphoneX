@@ -124,8 +124,8 @@ const plans: Plan[] = [
 
 export function Pricing({ navigate }: PricingProps) {
   const [isYearly, setIsYearly] = useState(false);
-
-  return (
+/* I falsed it to hide the component if you asked to show this please unfalse user:Atlas 3/4/26 */
+  return false &&(
     <section className="py-20 lg:py-28 bg-slate-50 dark:bg-slate-800/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}

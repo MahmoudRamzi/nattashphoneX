@@ -305,7 +305,7 @@ const FrameBadge = ({ frame }: { frame: string }) => (
 type Page =
   | 'home' | 'login' | 'register' | 'pricing' | 'education'
   | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
-  | 'admin-employees' | 'companies-accumulation' | 'premarke' | 'ticker-resell-signals';
+| 'admin-employees' | 'companies-accumulation' | 'premarket' | 'ticker-resell-signals';
 
 interface UserDashboardProps {
   navigate: (page: Page) => void;
@@ -663,7 +663,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                     <>
                       <h2 className="font-bold text-slate-800 dark:text-white text-base">مقارنة مؤشرات QAFAH</h2>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        النافذة الأساسية: {windowIndex}{hKey ? ` — ${hKey} / ${lKey}` : ''}
+                        النافذة الأساسية: {/*{windowIndex}{hKey ? ` — ${hKey} / ${lKey}` : ''}*/}
                       </p>
                     </>
                   )}
@@ -742,9 +742,9 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                     )}
                   </div>
 
-                  {!loading && !apiError && hasData && (
+                  {/*!loading && !apiError && hasData && (
                     <ChartLegend windowIndex={windowIndex} hKey={hKey} lKey={lKey} />
-                  )}
+                  )*/}
 
                   <div className="mt-6">
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">آخر 6 أيام</p>

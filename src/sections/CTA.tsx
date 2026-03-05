@@ -57,7 +57,7 @@ export function CTA({ navigate }: CTAProps) {
               <Button 
                 size="lg" 
                 variant="outline" 
-                className="border-white/30 text-white hover:bg-white/10 text-base px-8"
+                className="border-white/30 text-purple hover:bg-white/10 text-base px-8"
                 onClick={() => navigate('pricing')}
               >
                 اكتشف الباقات

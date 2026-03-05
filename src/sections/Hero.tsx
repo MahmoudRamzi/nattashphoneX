@@ -6,7 +6,7 @@ import {
 
 import { Button }  from '@/components/ui/button';
 import { Badge }   from '@/components/ui/badge';
-import { ArrowLeft, TrendingUp, Sparkles, Bell, BarChart3, Loader2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, Bell, BarChart3, Loader2 } from 'lucide-react';
 import QafahLogo from '@/components/Qafah_logo';
 
 /* ─── config ───────────────────────────────────────────── */
@@ -207,7 +207,8 @@ interface HeroProps {
 }
 
 /* ─── Legend (matches dashboard style) ────────────────── */
-function ChartLegend() {
+function ChartLegend() { return null; }
+{/*
   return (
     <div className="flex justify-center gap-4 mt-2" style={{ fontSize: 11, color: '#94a3b8' }}>
       <span className="flex items-center gap-1.5">
@@ -225,7 +226,7 @@ function ChartLegend() {
       </span>
     </div>
   );
-}
+*/}
 
 /* ─── Hero ─────────────────────────────────────────────── */
 export function Hero({ navigate }: HeroProps) {
@@ -305,8 +306,9 @@ export function Hero({ navigate }: HeroProps) {
               </Button>
             </div>
 
-            {/* Stats */}
-            <div className="flex gap-4 justify-end">
+            {/* Stats */}      
+            {false && (      
+              <div className="flex gap-4 justify-end">
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center min-w-[100px]">
                 <div className="flex items-center justify-center gap-1 mb-1">
                   <span className="text-green-500 text-sm">↗</span>
@@ -329,95 +331,53 @@ export function Hero({ navigate }: HeroProps) {
                 <p className="text-xs text-slate-500">دقة الإشارات</p>
               </div>
             </div>
+            )}
+            
           </div>
+          
 
           {/* ── Right: card ── */}
           <div className="relative order-1 lg:order-2">
             <div className="bg-white rounded-3xl shadow-xl p-6 relative">
 
-              {loading ? (
-                <div className="flex items-center justify-center h-96">
-                  <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+              {/* Card header — QAFAH indicator title (no ticker) */}
+              <div className="flex items-center justify-between mb-4">
+                <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+                  <Sparkles className="w-3 h-3 ml-1" />
+                  نطاق قريب · {HERO_WINDOW} أيام
+                </Badge>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-slate-900">مؤشر QAFAH</p>
                 </div>
-              ) : featuredCompany ? (
-                <>
-                  {/* Card header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="text-right">
-                      <Badge className={`${
-                        featuredCompany.signal === 'accumulation'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                      } border-0 mb-2`}>
-                        <TrendingUp className="w-3 h-3 ml-1" />
-                        {featuredCompany.signal === 'accumulation' ? 'تجميع' : 'تصريف'}
-                      </Badge>
-                      <p className="text-xs text-slate-400">{featuredCompany.level}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center gap-2 justify-end">
-                        <div>
-                          <p className="font-bold text-slate-900">{featuredCompany.ticker}</p>
-                        </div>
-                        <TickerLogo ticker={featuredCompany.ticker} size="lg" />
-                      </div>
-                    </div>
-                  </div>
+              </div>
 
-                  {/* Load diff */}
-                  <div className="text-right mb-4">
-                    <p className={`font-bold text-lg ${featuredCompany.loadDiff1d >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {featuredCompany.loadDiff1d >= 0 ? '+' : ''}{featuredCompany.loadDiff1d.toFixed(2)}%
-                    </p>
-                    <p className="text-slate-900 text-2xl font-bold">تغيير في الحمل</p>
-                    <p className="text-slate-400 text-sm">
-                      الحجم: {featuredCompany.volume} • {featuredCompany.volumeType === 'high' ? 'عالي' : 'طبيعي'}
-                    </p>
+              {/* ── QAFAH chart ── */}
+              <div className="relative h-72 mb-1">
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                  <div className="opacity-10 transform scale-50">
+                    <QafahLogo />
                   </div>
-
-                  {/* Perf badges */}
-                  <div className="flex gap-2 justify-end mb-4">
-                    <Badge className={`${featuredCompany.perf5d >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'} text-xs`}>
-                      5 أيام: {featuredCompany.perf5d >= 0 ? '+' : ''}{featuredCompany.perf5d.toFixed(2)}%
-                    </Badge>
-                    <Badge className={`${featuredCompany.perf10d >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'} text-xs`}>
-                      10 أيام: {featuredCompany.perf10d >= 0 ? '+' : ''}{featuredCompany.perf10d.toFixed(1)}%
-                    </Badge>
-                  </div>
-
-                  {/* ── QAFAH chart (matches UserDashboard style) ── */}
-                  <div className="relative h-48 mb-1">
-                    {/* Watermark */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                      <div className="opacity-10 transform scale-50">
-                        <QafahLogo />
-                      </div>
-                    </div>
-                    <QafahHeroChart />
-                  </div>
-
-                  {/* Legend */}
-                  <ChartLegend />
-
-                  {/* Card footer */}
-                  <div className="flex items-center justify-between mt-4">
-                    <Badge className="bg-purple-100 text-purple-700 border-purple-200">
-                      <Sparkles className="w-3 h-3 ml-1" />
-                      مجاناً هذا الأسبوع
-                    </Badge>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      <span className="text-xs text-slate-500">
-                        {featuredCompany.signal === 'accumulation' ? 'إشارة شراء فورية' : 'إشارة بيع فورية'}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-96 text-slate-400">
-                  لا توجد بيانات متاحة
                 </div>
-              )}
+                <QafahHeroChart />
+              </div>
+
+              {/* Legend */}
+              <ChartLegend />
+
+              {/* Card footer */}
+              <div className="flex items-center justify-between mt-4">
+                <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+                  <Sparkles className="w-3 h-3 ml-1" />
+                  مجاناً هذا الأسبوع
+                </Badge>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-slate-500">
+                    {featuredCompany?.signal === 'accumulation' ? 'إشارة شراء فورية' : 'إشارة بيع فورية'}
+                  </span>
+                </div>
+              </div>
+
             </div>
 
             {/* Floating notification */}

@@ -163,7 +163,7 @@ export function SubscriberServices() {
                 <Star className="w-5 h-5 ml-2" />
                 جرب مجاناً
               </Button>
-              <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10">
+              <Button size="lg" variant="outline" className="border-white text-purple hover:bg-white/10">
                 <ArrowRight className="w-5 h-5 mr-2" />
                 تعرف على الباقات
               </Button>

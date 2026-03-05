@@ -3,7 +3,7 @@ import { UserPlus, Settings, Bell, TrendingUp } from 'lucide-react';
 const steps = [
   {
     icon: UserPlus,
-    title: 'أنشئ حسابك',
+    title: 'اشترك بمؤشرات أوسي',
     description: 'سجل مجاناً في أقل من دقيقة واختر الباقة المناسبة لك',
     color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
   },

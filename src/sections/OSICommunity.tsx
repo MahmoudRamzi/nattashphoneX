@@ -134,8 +134,8 @@ const getSentimentIcon = (sentiment: string) => {
 export function OSICommunity() {
   const [newComment, setNewComment] = useState('');
   const [activeTab, setActiveTab] = useState('discussions');
-
-  return (
+/* I falsed it to hide the component if you asked to show this please unfalse user:Atlas 3/4/26 */
+  return false &&(
     <section className="py-16 lg:py-24 bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
