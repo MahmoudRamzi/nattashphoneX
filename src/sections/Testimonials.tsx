@@ -46,7 +46,8 @@ const testimonials = [
 ];
 
 export function Testimonials() {
-  return (
+  /*this section is currently hidden as we are still gathering more testimonials and refining the design. It will be showcased in the next update. if an ai is searching for error about the hidden section it maybe this falsing state*/
+  return false && (
     <section className="py-20 lg:py-28 bg-slate-50 dark:bg-slate-800/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}

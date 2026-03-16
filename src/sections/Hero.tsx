@@ -6,7 +6,7 @@ import {
 
 import { Button }  from '@/components/ui/button';
 import { Badge }   from '@/components/ui/badge';
-import { ArrowLeft, Sparkles, Bell, BarChart3, Loader2 } from 'lucide-react';
+import { ArrowLeft, Sparkles, Bell, BarChart3, Loader2, AlertTriangle } from 'lucide-react';
 import QafahLogo from '@/components/Qafah_logo';
 
 /* ─── config ───────────────────────────────────────────── */
@@ -14,7 +14,7 @@ const API_BASE            = 'https://app.qafah.com';
 const Glopal_home_ticker  = 'TEAM';
 
 // Which QAFAH window to show in the hero chart (matches dashboard "نطاق قريب")
-const HERO_WINDOW = 3;
+const HERO_WINDOW = 10;
 
 /* ─── Arabic months (0-indexed, UTC-safe) ─────────────── */
 const AR_MONTHS = [
@@ -301,7 +301,7 @@ export function Hero({ navigate }: HeroProps) {
                 className="bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-600/25"
                 onClick={() => navigate('register')}
               >
-                ابدأ الآن مجاناً
+                ابدأ الآن 
                 <ArrowLeft className="w-4 h-4 mr-2" />
               </Button>
             </div>
@@ -401,6 +401,20 @@ export function Hero({ navigate }: HeroProps) {
             </div>
           </div>
 
+        </div>
+
+        {/* Under Construction Sign - Centered */}
+        <div className="flex flex-col items-center justify-center mt-2">
+          <div className="relative">
+            <AlertTriangle className="w-40 h-40 text-amber-500 drop-shadow-lg animate-bounce" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-32 h-32 bg-amber-400/20 rounded-full blur-2xl"></div>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-amber-900">Under Construction</p>
+            <p className="text-3xl font-bold text-amber-900">تحت الإنشاء</p>
+          </div>
         </div>
       </div>
     </section>

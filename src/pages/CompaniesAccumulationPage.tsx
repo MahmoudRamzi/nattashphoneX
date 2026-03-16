@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { AppSidebar } from '@/components/AppSidebar';          // ← shared sidebar
 import type { AuthUser } from '@/hooks/useAuth';
+import * as echarts from 'echarts';
 
 /* ─── types ─────────────────────────────────────────────────────────── */
 interface RawRow {
@@ -86,8 +87,8 @@ const LEVEL_TYPE_MAP: Record<string, { label: string; cat: 'continuous' | 'sub' 
 const SIGNAL_MAP: Record<string, { label: string; isAccum: boolean }> = {
   accumulation:       { label: 'تجميع',        isAccum: true  },
   distribution:       { label: 'تصريف',        isAccum: false },
-  'pre-accumulation': { label: 'قبل تجميع',   isAccum: true  },
-  'pre-distribution': { label: 'قبل تصريف',   isAccum: false },
+  'pre-accumulation': { label: 'تجميع فرعي',   isAccum: true  },
+  'pre-distribution': { label: 'تصريف فرعي',   isAccum: false },
   neutral:            { label: 'محايد',        isAccum: true  },
 };
 
@@ -203,54 +204,304 @@ function useTickerSearch(searchQuery: string): CompanyData | null {
   return result;
 }
 
-/* ─── PlotlyChart ────────────────────────────────────────────────────── */
-function PlotlyChart({ ticker }: { ticker: string }) {
+/* ─── EChartsChart ──────────────────────────────────────────────────── */
+function EChartsChart({ ticker }: { ticker: string }) {
   const divRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [errMsg, setErrMsg] = useState('');
 
-  useEffect(() => {
-    if (document.getElementById('plotly-cdn')) return;
-    const s = document.createElement('script');
-    s.id  = 'plotly-cdn';
-    s.src = 'https://cdn.plot.ly/plotly-2.27.0.min.js';
-    document.head.appendChild(s);
-  }, []);
-
   const drawChart = useCallback(async (t: string) => {
     if (!t) return;
-    setStatus('loading'); setErrMsg('');
-    const PlotlyGlobal = (window as any).Plotly;
-    if (PlotlyGlobal && divRef.current) PlotlyGlobal.purge(divRef.current);
-    let waited = 0;
-    while (!(window as any).Plotly && waited < 6000) { await new Promise(r => setTimeout(r, 200)); waited += 200; }
-    const Plotly = (window as any).Plotly;
-    if (!Plotly) { setErrMsg('Plotly CDN failed to load'); setStatus('error'); return; }
+    setStatus('loading');
+    setErrMsg('');
+
     try {
       const res = await fetch(`${API_BASE}/api/chart/${encodeURIComponent(t)}`);
       const raw = await res.text();
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
       const d: ChartPayload = JSON.parse(raw);
+      
+      if (!divRef.current) return;
+
+      // Initialize chart if not already done
+      if (!chartRef.current) {
+        chartRef.current = echarts.init(divRef.current, null, { renderer: 'canvas' });
+      }
+
       const minWeight = Math.min(...d.weight.filter(v => typeof v === 'number'));
       const maxWeight = Math.max(...d.weight.filter(v => typeof v === 'number'));
-      const traces = [
-        { x: d.dates, y: d.weight, name: 'Load', type: 'scatter', mode: 'lines', line: { color: '#6941c6', width: 3, shape: 'spline' }, fill: 'tozeroy', fillcolor: 'rgba(244,235,255,0.6)', hoverinfo: 'skip' },
-        { x: d.dates, y: d.high_3, name: 'High (W3)', type: 'scatter', mode: 'lines', line: { color: '#1375c6d0', width: 1.5, dash: 'dot' }, hoverinfo: 'skip' },
-        { x: d.dates, y: d.low_3,  name: 'Low (W3)',  type: 'scatter', mode: 'lines', line: { color: '#1374c6d0', width: 1.5, dash: 'dot' }, hoverinfo: 'skip' },
-        { x: d.signals.positive_real.map(s => s.date), y: d.signals.positive_real.map(s => s.weight), text: d.signals.positive_real.map(s => String(s.level)), name: 'Pos Real', hoverinfo: 'skip', type: 'scatter', mode: 'markers+text', textposition: 'top center', marker: { size: 9, color: 'rgba(0,255,136,0.3)', symbol: 'diamond', line: { width: 2, color: '#00cc70' } }, textfont: { size: 13, color: '#00cc70', family: 'monospace' } },
-        { x: d.signals.negative_real.map(s => s.date), y: d.signals.negative_real.map(s => s.weight), text: d.signals.negative_real.map(s => String(s.level)), name: 'Neg Real', hoverinfo: 'skip', type: 'scatter', mode: 'markers+text', textposition: 'top center', marker: { size: 9, color: 'rgba(255,68,102,0.3)', symbol: 'diamond', line: { width: 2, color: '#e63946' } }, textfont: { size: 13, color: '#e63946', family: 'monospace' } },
-        { x: d.signals.positive_internal.map(s => s.date), y: d.signals.positive_internal.map(s => s.weight), text: d.signals.positive_internal.map(s => String(s.level)), name: 'Pos Internal', hoverinfo: 'skip', type: 'scatter', mode: 'markers+text', textposition: 'bottom center', marker: { size: 9, color: 'rgba(0,212,255,0.3)', symbol: 'circle', line: { width: 2, color: '#0096c7' } }, textfont: { size: 12, color: '#0096c7', family: 'monospace' } },
-        { x: d.signals.negative_internal.map(s => s.date), y: d.signals.negative_internal.map(s => s.weight), text: d.signals.negative_internal.map(s => String(s.level)), name: 'Neg Internal', hoverinfo: 'skip', type: 'scatter', mode: 'markers+text', textposition: 'bottom center', marker: { size: 9, color: 'rgba(255,149,0,0.3)', symbol: 'circle', line: { width: 2, color: '#d97706' } }, textfont: { size: 12, color: '#d97706', family: 'monospace' } },
-      ];
-      const layout = {
-        margin: { t: 20, b: 130, l: 60, r: 20 },
-        xaxis: { title: 'التاريخ', showgrid: false },
-        yaxis: { showgrid: true, gridcolor: '#dc8bff48', gridwidth: 1, color: '#00000000', range: [minWeight * 0.95, maxWeight * 1.05] },
-        hovermode: 'closest', showlegend: false, dragmode: 'pan',
-        legend: { orientation: 'h', x: 0, y: -0.28, xanchor: 'left', yanchor: 'top', font: { size: 11, color: '#1e293b' }, bgcolor: 'rgba(255,255,255,0)', borderwidth: 0 },
-        paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', height: 520,
+      const padding = (maxWeight - minWeight) * 0.1;
+
+
+            // Format dates: "7 Mar", "10 Oct", show year when it changes
+      const formatDatesDisplay = (dates: string[]): string[] => {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        let lastYear = '';
+        return dates.map(dateStr => {
+          const [year, month, day] = dateStr.split('-');
+          const monthName = months[parseInt(month) - 1];
+          const dayNum = parseInt(day);
+          let formatted = `${dayNum} ${monthName}`;
+          if (year !== lastYear) {
+            formatted += ` ${year}`;
+            lastYear = year;
+          }
+          return formatted;
+        });
       };
-      Plotly.react(divRef.current, traces, layout, { displayModeBar: false, scrollZoom: true, responsive: true });
+
+      const formattedDates = formatDatesDisplay(d.dates);
+
+      // Create series data - use date index instead of date string for categorical X-axis
+      const positiveRealData = d.signals.positive_real.map(s => {
+        const dateIndex = d.dates.indexOf(s.date);
+        return {
+          value: [dateIndex, s.weight, s.level],
+          itemStyle: { color: 'rgba(0,204,112,0.7)' },
+        };
+      });
+
+      const negativeRealData = d.signals.negative_real.map(s => {
+        const dateIndex = d.dates.indexOf(s.date);
+        return {
+          value: [dateIndex, s.weight, s.level],
+          itemStyle: { color: 'rgba(230,57,70,0.7)' },
+        };
+      });
+
+      const positiveInternalData = d.signals.positive_internal.map(s => {
+        const dateIndex = d.dates.indexOf(s.date);
+        return {
+          value: [dateIndex, s.weight, s.level],
+          itemStyle: { color: 'rgba(0,150,199,0.7)' },
+        };
+      });
+
+      const negativeInternalData = d.signals.negative_internal.map(s => {
+        const dateIndex = d.dates.indexOf(s.date);
+        return {
+          value: [dateIndex, s.weight, s.level],
+          itemStyle: { color: 'rgba(217,119,6,0.7)' },
+        };
+      });
+
+      const option: echarts.EChartsOption = {
+        backgroundColor: '#ffffff',
+        tooltip: {
+          trigger: 'axis',
+          transitionDuration: 0,
+          confine: true,
+          formatter: (params: any) => {
+            if (Array.isArray(params) && params.length > 0) {
+              const param = params[0];
+              const dateStr = formattedDates[param.dataIndex];
+              const hoverDate = d.dates[param.dataIndex];
+              
+              // Count signals at the hovered date
+              const posRealCount = d.signals.positive_real.filter(s => s.date === hoverDate).length;
+              const negRealCount = d.signals.negative_real.filter(s => s.date === hoverDate).length;
+              const posInternalCount = d.signals.positive_internal.filter(s => s.date === hoverDate).length;
+              const negInternalCount = d.signals.negative_internal.filter(s => s.date === hoverDate).length;
+              
+              let tooltip = `<strong>${dateStr}</strong><br/>`;
+              if (posRealCount > 0) tooltip += `Pos Real: ${posRealCount}<br/>`;
+              if (negRealCount > 0) tooltip += `Neg Real: ${negRealCount}<br/>`;
+              if (posInternalCount > 0) tooltip += `Pos Internal: ${posInternalCount}<br/>`;
+              if (negInternalCount > 0) tooltip += `Neg Internal: ${negInternalCount}<br/>`;
+              
+              return tooltip || dateStr;
+            }
+            return '';
+          },
+        },
+        grid: {
+          left: '6px',
+          right: '2px',
+          top: '2px',
+          bottom: '80px',
+          containLabel: false,
+        },
+        xAxis: {
+          type: 'category',
+          data: formattedDates,
+          axisLabel: {
+            fontSize: 11,
+            color: '#666',
+            rotate: 45,
+            interval: 'auto',
+            hideOverlap: true,
+          },
+          axisLine: { lineStyle: { color: '#ddd' } },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: 'value',
+          name: 'Load',
+          position: 'right',
+          axisLabel: { show: false },
+          axisLine: { lineStyle: { color: '#ddd' } },
+          splitLine: { lineStyle: { color: '#eee', type: 'dashed' } },
+          min: minWeight - padding,
+          max: maxWeight + padding,
+        },
+        dataZoom: [
+          {
+            type: 'slider',
+            show: false,
+            yAxisIndex: [0],
+            xAxisIndex: [0],
+            start: 0,
+            end: 100,
+            textStyle: { color: '#666', fontSize: 10 },
+            borderColor: 'transparent',
+            fillerColor: 'transparent',
+            handleSize: 8,
+            bottom: '10px',
+            height: '20px',
+          },
+          {
+            type: 'inside',
+            xAxisIndex: [0],
+
+            start: 0,
+            end: 100,
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+          },
+        ],
+        series: [
+          {
+            name: 'Load',
+            data: d.weight,
+            type: 'line',
+            smooth: 0.3,
+            lineStyle: { color: '#6941c6', width: 3 },
+            areaStyle: { color: 'rgba(244,235,255,0.6)' },
+            itemStyle: { opacity: 0 },
+            hoverAnimation: false,
+            sampling: 'lttb',
+          } as echarts.LineSeriesOption,
+          {
+            name: 'High (W3)',
+            data: d.high_3,
+            type: 'line',
+            smooth: false,
+            lineStyle: { color: '#b3b3ff', width: 1.5, type: 'dotted' },
+            itemStyle: { opacity: 0 },
+            hoverAnimation: false,
+            sampling: 'lttb',
+          } as echarts.LineSeriesOption,
+          {
+            name: 'Low (W3)',
+            data: d.low_3,
+            type: 'line',
+            smooth: false,
+            lineStyle: { color: '#b3b3ff', width: 1.5, type: 'dotted' },
+            itemStyle: { opacity: 0 },
+            hoverAnimation: false,
+            sampling: 'lttb',
+          } as echarts.LineSeriesOption,
+          {
+            name: 'Pos Real',
+            data: positiveRealData,
+            type: 'scatter',
+            symbolSize: 9,
+            itemStyle: { 
+              color: 'rgba(0,204,112,0.7)',
+              borderColor: '#00cc70',
+              borderWidth: 2,
+            },
+            label: {
+              show: true,
+              position: 'top',
+              formatter: (p: any) => String(p.value?.[2] ?? ''),
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: '#009944',
+              fontFamily: 'monospace',
+              backgroundColor: 'rgba(255,255,255,0.8)',
+              padding: [2, 4],
+              borderRadius: 2,
+            },
+          } as echarts.ScatterSeriesOption,
+          {
+            name: 'Neg Real',
+            data: negativeRealData,
+            type: 'scatter',
+            symbolSize: 9,
+            itemStyle: {
+              color: 'rgba(230,57,70,0.7)',
+              borderColor: '#e63946',
+              borderWidth: 2,
+            },
+            label: {
+              show: true,
+              position: 'top',
+              formatter: (p: any) => String(p.value?.[2] ?? ''),
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: '#dd0000',
+              fontFamily: 'monospace',
+              backgroundColor: 'rgba(255,255,255,0.8)',
+              padding: [2, 4],
+              borderRadius: 2,
+            },
+          } as echarts.ScatterSeriesOption,
+          {
+            name: 'Pos Internal',
+            data: positiveInternalData,
+            type: 'scatter',
+            symbolSize: 8,
+            itemStyle: {
+              color: 'rgba(0,150,199,0.7)',
+              borderColor: '#0096c7',
+              borderWidth: 2,
+            },
+            label: {
+              show: true,
+              position: 'bottom',
+              formatter: (p: any) => String(p.value?.[2] ?? ''),
+              fontSize: 11,
+              fontWeight: 'bold',
+              color: '#0055dd',
+              fontFamily: 'monospace',
+              backgroundColor: 'rgba(255,255,255,0.8)',
+              padding: [2, 4],
+              borderRadius: 2,
+            },
+          } as echarts.ScatterSeriesOption,
+          {
+            name: 'Neg Internal',
+            data: negativeInternalData,
+            type: 'scatter',
+            symbolSize: 8,
+            itemStyle: {
+              color: 'rgba(217,119,6,0.7)',
+              borderColor: '#d97706',
+              borderWidth: 2,
+            },
+            label: {
+              show: true,
+              position: 'bottom',
+              formatter: (p: any) => String(p.value?.[2] ?? ''),
+              fontSize: 11,
+              fontWeight: 'bold',
+              color: '#cc5500',
+              fontFamily: 'monospace',
+              backgroundColor: 'rgba(255,255,255,0.8)',
+              padding: [2, 4],
+              borderRadius: 2,
+            },
+          } as echarts.ScatterSeriesOption,
+        ],
+        animation: true,
+        animationDuration: 500,
+      };
+
+      chartRef.current.setOption(option);
       setStatus('idle');
     } catch (e: unknown) {
       setErrMsg(e instanceof Error ? e.message : 'Unknown error');
@@ -258,7 +509,25 @@ function PlotlyChart({ ticker }: { ticker: string }) {
     }
   }, []);
 
-  useEffect(() => { drawChart(ticker); }, [ticker, drawChart]);
+  useEffect(() => {
+    drawChart(ticker);
+    const handleResize = () => {
+      if (chartRef.current) {
+        chartRef.current.resize();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [ticker, drawChart]);
+
+  useEffect(() => {
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.dispose();
+        chartRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="relative" style={{ minHeight: 520 }}>
@@ -275,7 +544,7 @@ function PlotlyChart({ ticker }: { ticker: string }) {
           <button onClick={() => drawChart(ticker)} className="text-xs underline text-slate-500 hover:text-slate-800 mt-1">إعادة المحاولة</button>
         </div>
       )}
-      <div ref={divRef} />
+      <div ref={divRef} style={{ width: '100%', height: '100%', minHeight: '520px' }} />
     </div>
   );
 }
@@ -408,6 +677,11 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
   });
 
   const counts = { continuous: byCategory.continuous.length, sub: byCategory.sub.length, change: byCategory.change.length };
+  
+  // Calculate signal counts within current category
+  const currentCategoryCompanies = byCategory[selectedCategory] ?? [];
+  const accumCount = currentCategoryCompanies.filter(c => ['accumulation', 'pre-accumulation'].includes(c.signal)).length;
+  const distribCount = currentCategoryCompanies.filter(c => !['accumulation', 'pre-accumulation'].includes(c.signal) && c.signal !== 'neutral').length;
   const historyRows: HistoryRow[] = selectedCompany ? historyFn(selectedCompany.ticker) : [];
 
   const categoryMeta = {
@@ -537,7 +811,7 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
                   )}
 
                   {selectedCompany
-                    ? <PlotlyChart ticker={selectedCompany.ticker} />
+                    ? <EChartsChart ticker={selectedCompany.ticker} />
                     : <div className="flex items-center justify-center h-[520px] bg-slate-50 rounded-xl text-slate-400 text-sm">
                         {sigsLoading ? <Loader2 className="w-8 h-8 animate-spin text-purple-400" /> : 'اختر شركة من القائمة'}
                       </div>
@@ -629,15 +903,26 @@ export function CompaniesAccumulationPage({ navigate, onLogout, user }: Companie
                   { key: 'all',     label: 'الكل',   color: 'bg-slate-700 text-white',   inactive: 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'    },
                   { key: 'accum',   label: 'تجميع', color: 'bg-emerald-600 text-white', inactive: 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50' },
                   { key: 'distrib', label: 'تصريف', color: 'bg-red-500 text-white',     inactive: 'bg-white text-red-600 border border-red-200 hover:bg-red-50'            },
-                ] as const).map(f => (
-                  <button
-                    key={f.key}
-                    onClick={() => setSignalFilter(f.key)}
-                    className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg transition-all ${signalFilter === f.key ? f.color : f.inactive}`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+                ] as const).map(f => {
+                  const countDisplay = f.key === 'all' 
+                    ? currentCategoryCompanies.length
+                    : f.key === 'accum' 
+                    ? accumCount
+                    : distribCount;
+                  
+                  return (
+                    <button
+                      key={f.key}
+                      onClick={() => setSignalFilter(f.key)}
+                      className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${signalFilter === f.key ? f.color : f.inactive}`}
+                    >
+                      <span>{f.label}</span>
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${signalFilter === f.key ? 'bg-white/25' : 'bg-slate-100'}`}>
+                        {sigsLoading ? '…' : countDisplay}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">

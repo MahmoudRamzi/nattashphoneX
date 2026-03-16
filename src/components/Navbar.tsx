@@ -76,7 +76,7 @@ export function Navbar({ isDark, toggleTheme, navigate }: NavbarProps) {
               className="bg-purple-600 hover:bg-purple-700 text-white shadow-purple hover:shadow-purple-lg transition-all"
               onClick={() => navigate('register')}
             >
-              ابدأ مجاناً
+              ابدأ الآن!
             </Button>
           </div>
 

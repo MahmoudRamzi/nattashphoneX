@@ -41,7 +41,7 @@ export function CTA({ navigate }: CTAProps) {
 
             {/* Description */}
             <p className="text-lg text-purple-100 mb-8 max-w-2xl mx-auto">
-              انضم إلى آلاف المتداولين الناجحين واستفد من إشاراتنا الذكية وتحليلاتنا المتقدمة. ابدأ مجاناً اليوم!
+              انضم إلى آلاف المتداولين الناجحين واستفد من إشاراتنا الذكية وتحليلاتنا المتقدمة. ابدأ اليوم!
             </p>
 
             {/* CTA Buttons */}
@@ -51,7 +51,7 @@ export function CTA({ navigate }: CTAProps) {
                 className="bg-white text-purple-700 hover:bg-purple-50 text-base px-8 shadow-lg"
                 onClick={() => navigate('register')}
               >
-                ابدأ مجاناً
+                ابدأ الآن
                 <ArrowLeft className="w-5 h-5 mr-2" />
               </Button>
               <Button 

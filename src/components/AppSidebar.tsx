@@ -20,6 +20,18 @@ interface AppSidebarProps {
   activePage?: Page;
 }
 
+// ── Reusable external link styled as sub-item ─────────────────────────────────
+const ExternalSubLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
+  <a
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-right px-3 py-2 rounded-lg text-sm w-full transition-colors text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 block"
+  >
+    {children}
+  </a>
+);
+
 // ══════════════════════════════════════════════════════════════════════════════
 export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarProps) {
   const isAdmin = user?.role === 'admin';
@@ -59,10 +71,10 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
       </button>
 
       {/* Calls */}
-      <button className={navItemCls()}>
+      {/*<button className={navItemCls()}>
         <Phone className="w-4 h-4" /> Calls
       </button>
-
+/}
       {/* محفظتي — expandable */}
       <div>
         <button
@@ -75,9 +87,7 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
 
         {expandedMenus.includes('portfolio') && (
           <div className="mr-4 mt-1 flex flex-col gap-0.5 border-r-2 border-slate-100 dark:border-slate-700 pr-3">
-            <button className={subItemCls()}>
-              الأسواق
-            </button>
+           {/* <button className={subItemCls()}>الأسواق</button>*/}
             <button
               onClick={() => navigate('companies-accumulation')}
               className={subItemCls('companies-accumulation')}
@@ -92,6 +102,24 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
                 Advanced Chart
               </button>
             )}
+            {/*https://app.qafah.com/?view=crossing*/} 
+            <ExternalSubLink href="https://app.qafah.com/?view=crossing">
+              تقرير الاختراقات
+            </ExternalSubLink>
+            {/*https://app.qafah.com/?view=etfs_report*/}
+            <ExternalSubLink href="https://app.qafah.com/?view=etfs_report">
+              تقرير الأحمال
+            </ExternalSubLink>
+            {/*https://app.qafah.com/?view=alerts*/}
+            <ExternalSubLink href="https://app.qafah.com/loads">
+              تفاصيل الأحمال
+            </ExternalSubLink>
+            {/*<ExternalSubLink href="https://app.qafah.com/sector_rank">
+              Sector Ranks
+            </ExternalSubLink>*/}
+            <ExternalSubLink href="https://app.qafah.com/?view=alerts">
+              التنبيهات
+            </ExternalSubLink>
           </div>
         )}
       </div>
