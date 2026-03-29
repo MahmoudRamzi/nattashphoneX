@@ -16,6 +16,8 @@ import { Education } from '@/pages/Education';
 import { AdminDashboard } from '@/pages/AdminDashboard';
 import { UserDashboard } from '@/pages/UserDashboard';
 import { AlertsPage } from '@/pages/AlertsPage';
+import { LoadsPage } from '@/pages/LoadsPage';
+import { CrossingPage, ETFsReportPage } from '@/pages/EmbedPages';
 import { EmployeeDashboard } from '@/pages/EmployeeDashboard';
 import { LeaderboardPage } from '@/pages/LeaderboardPage';
 import { AdminEmployees } from '@/pages/AdminEmployees';
@@ -29,12 +31,17 @@ export type Page =
   | 'home' | 'login' | 'register' | 'pricing' | 'education'
   | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
   | 'admin-employees' | 'companies-accumulation' | 'premarket'
-  | 'ticker-resell-signals';
+  | 'ticker-resell-signals'
+  // ── new pages (previously external links) ──
+  | 'loads-detail'      // تفاصيل الأحمال  →  /api/loads
+  | 'crossing-report'   // تقرير الاختراقات → iframe /?view=crossing
+  | 'etfs-report';      // تقارير الأحمال   → iframe /?view=etfs_report
 
 const PROTECTED_PAGES: Page[] = [
   'dashboard', 'alerts', 'employee', 'leaderboard',
   'admin', 'admin-employees', 'companies-accumulation', 'premarket',
   'ticker-resell-signals',
+  'loads-detail', 'crossing-report', 'etfs-report',
 ];
 const ADMIN_ONLY_PAGES: Page[] = ['admin', 'admin-employees'];
 const STAFF_ROLES = ['market_supervisor', 'us_market_supervisor', 'employee', 'admin'];
@@ -97,8 +104,7 @@ function App() {
     }
   }, []);
 
-  // Auto-redirect on SESSION RESTORE (page refresh while logged in) only.
-  // Skipped when postLoginRef is set — that means we already navigated intentionally.
+  // Auto-redirect on SESSION RESTORE only.
   useEffect(() => {
     if (isLoading) return;
     if (postLoginRef.current) {
@@ -120,18 +126,12 @@ function App() {
     });
   };
 
-  // ── navigateAfterLogin ───────────────────────────────────────────────────
-  // Called by Login.tsx after a successful login. Bypasses the isAuthenticated
-  // guard entirely because we know auth just succeeded — isAuthenticated hasn't
-  // updated yet (React state is async), but the login is valid.
   const navigateAfterLogin = (page: Page) => {
     postLoginRef.current = true;
     setCurrentPage(page);
     window.scrollTo(0, 0);
   };
 
-  // ── navigate ─────────────────────────────────────────────────────────────
-  // Normal navigation used everywhere else — enforces auth guards.
   const navigate = (page: Page) => {
     if (PROTECTED_PAGES.includes(page) && !isAuthenticated) {
       setCurrentPage('login');
@@ -163,7 +163,6 @@ function App() {
 
   switch (currentPage) {
     case 'login':
-      // Pass navigateAfterLogin so Login bypasses the auth guard
       return (
         <Login
           navigate={navigate}
@@ -197,9 +196,20 @@ function App() {
     case 'dashboard':
       return <UserDashboard navigate={navigate} onLogout={handleLogout} user={user} />;
 
+    // ── previously external links, now full React pages ──────────────────────
     case 'alerts':
-      return <AlertsPage navigate={navigate} />;
+      return <AlertsPage navigate={navigate} onLogout={handleLogout} user={user} />;
 
+    case 'loads-detail':
+      return <LoadsPage navigate={navigate} onLogout={handleLogout} user={user} />;
+
+    case 'crossing-report':
+      return <CrossingPage navigate={navigate} onLogout={handleLogout} user={user} />;
+
+    case 'etfs-report':
+      return <ETFsReportPage navigate={navigate} onLogout={handleLogout} user={user} />;
+
+    // ─────────────────────────────────────────────────────────────────────────
     case 'employee':
       return <EmployeeDashboard navigate={navigate} />;
 

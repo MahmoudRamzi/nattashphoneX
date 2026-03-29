@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer
@@ -7,8 +7,8 @@ import {
   Bell, Moon, Sun,
   Loader2, RefreshCw, LogOut,
 } from 'lucide-react';
-import QafahLogo from '@/components/Qafah_logo';
 import { AppSidebar } from '@/components/AppSidebar';
+import type { Page } from '@/App';
 import type { Last6DaysResponse, EmojiDay } from '@/types/message';
 import type { AuthUser } from '@/hooks/useAuth';
 
@@ -268,10 +268,7 @@ const FrameBadge = ({ frame }: { frame: string }) => (
   </span>
 );
 
-type Page =
-  | 'home' | 'login' | 'register' | 'pricing' | 'education'
-  | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
-| 'admin-employees' | 'companies-accumulation' | 'premarket' | 'ticker-resell-signals';
+// ── Page type is now imported from App.tsx — no local redefinition ────────────
 
 interface UserDashboardProps {
   navigate: (page: Page) => void;
@@ -291,7 +288,7 @@ interface ChartPayload {
   };
 }
 
-// ── Recharts Ticker Chart (replaces Plotly) ─────────────────────────────────
+// ── Recharts Ticker Chart ────────────────────────────────────────────────────
 function RechartsTickerChart({ ticker, onClose, isDark }: { ticker: string; onClose: () => void; isDark: boolean }) {
   const [chartData, setChartData] = useState<{ date: string; weight: number; high_3: number; low_3: number }[]>([]);
   const [status, setStatus] = useState<'loading' | 'error' | 'idle'>('loading');
@@ -310,7 +307,6 @@ function RechartsTickerChart({ ticker, onClose, isDark }: { ticker: string; onCl
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const d: ChartPayload = await res.json();
         if (cancelled) return;
-
         const rows = d.dates.map((date, i) => ({
           date,
           weight:  d.weight[i]  ?? 0,
@@ -379,51 +375,11 @@ function RechartsTickerChart({ ticker, onClose, isDark }: { ticker: string; onCl
                 axisLine={{ stroke: gridColor }}
                 tickLine={false}
               />
-              <YAxis
-                tick={false}
-                axisLine={false}
-                tickLine={false}
-                width={0}
-                domain={yDomain}
-              />
-              <Tooltip
-                content={() => null}
-                cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }}
-              />
-              {/* Main weight area — matches main chart's QL */}
-              <Area
-                type="monotone"
-                dataKey="weight"
-                stroke="#8b5cf6"
-                strokeWidth={2}
-                fillOpacity={1}
-                fill="url(#colorTickerWeight)"
-                isAnimationActive={false}
-                dot={false}
-              />
-              {/* High band — matches main chart's hKey */}
-              <Area
-                type="stepAfter"
-                dataKey="high_3"
-                stroke="#3b82f6"
-                strokeWidth={1.5}
-                strokeDasharray="7 4"
-                fill="none"
-                isAnimationActive={false}
-                dot={false}
-              />
-              {/* Low band — matches main chart's lKey */}
-              <Area
-                type="stepAfter"
-                dataKey="low_3"
-                stroke="#3b82f6"
-                strokeWidth={1.5}
-                strokeDasharray="7 4"
-                strokeOpacity={0.55}
-                fill="none"
-                isAnimationActive={false}
-                dot={false}
-              />
+              <YAxis tick={false} axisLine={false} tickLine={false} width={0} domain={yDomain} />
+              <Tooltip content={() => null} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }} />
+              <Area type="monotone"  dataKey="weight" stroke="#8b5cf6" strokeWidth={2}   fillOpacity={1} fill="url(#colorTickerWeight)" isAnimationActive={false} dot={false} />
+              <Area type="stepAfter" dataKey="high_3" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="7 4" fill="none" isAnimationActive={false} dot={false} />
+              <Area type="stepAfter" dataKey="low_3"  stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="7 4" strokeOpacity={0.55} fill="none" isAnimationActive={false} dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         )}
@@ -434,9 +390,9 @@ function RechartsTickerChart({ ticker, onClose, isDark }: { ticker: string; onCl
 
 // ══════════════════════════════════════════════════════════════════════════════
 export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) {
-  const [activePeriod, setActivePeriod]         = useState('نطاق قريب');
-  const [isDark, setIsDark]                     = useState(false);
-  const [selectedTicker, setSelectedTicker]     = useState<string | null>(null);
+  const [activePeriod, setActivePeriod]     = useState('نطاق قريب');
+  const [isDark, setIsDark]                 = useState(false);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
 
   const [rawData, setRawData]   = useState<UptrendRecord[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -487,7 +443,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
         });
         setMyListData(sorted.slice(0, 15));
       })
-      .catch()
+      .catch(() => {})
       .finally(() => setMyListLoading(false));
   }, []);
 
@@ -541,7 +497,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
         const res = await fetch(`${API_BASE}/api/etf/qafah-last-6-days`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         setLast6DaysData(await res.json());
-      } catch { }
+      } catch {}
       finally { setLast6Loading(false); }
     })();
   }, []);
@@ -658,7 +614,13 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
       </div>
 
       <div className="flex flex-1">
-        <AppSidebar navigate={navigate} onLogout={onLogout} user={user} activePage="dashboard" />
+        {/* ── Sidebar — now uses imported Page type, navigation works correctly ── */}
+        <AppSidebar
+          navigate={navigate}
+          onLogout={onLogout}
+          user={user}
+          activePage="dashboard"
+        />
 
         {/* ── Main ── */}
         <main className="flex-1 p-6 overflow-auto">
@@ -666,7 +628,6 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
 
             {/* ── Chart Card ── */}
             <div className="col-span-2 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
-              {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div>
                   {selectedTicker ? (
@@ -681,9 +642,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                   ) : (
                     <>
                       <h2 className="font-bold text-slate-800 dark:text-white text-base">مقارنة مؤشرات QAFAH</h2>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        النافذة الأساسية:
-                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">النافذة الأساسية:</p>
                     </>
                   )}
                 </div>
@@ -706,7 +665,6 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                 )}
               </div>
 
-              {/* Chart body */}
               {selectedTicker ? (
                 <div className="flex flex-col" style={{ height: 400 }}>
                   <RechartsTickerChart
@@ -717,7 +675,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                 </div>
               ) : (
                 <div className="flex gap-3 items-stretch" style={{ minHeight: 380 }}>
-                  {/* ── Last 6 Days strip ── */}
+                  {/* Last 6 Days strip */}
                   <div className="flex flex-col shrink-0 w-16 border-l border-slate-100 dark:border-slate-700 pl-3">
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center mb-3 font-medium">آخر 6 أيام</p>
                     {last6Loading ? (
@@ -747,7 +705,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                     )}
                   </div>
 
-                  {/* Main chart area */}
+                  {/* Main chart */}
                   <div className="flex-1 min-w-0 flex flex-col">
                     <div className="flex-1 min-h-64 w-full">
                       {loading ? (
@@ -777,16 +735,8 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                               tickLine={false}
                               label={{ value: 'التاريخ', position: 'insideBottom', offset: -12, fontSize: 11, fill: tickColor }}
                             />
-                            <YAxis
-                              tick={false}
-                              axisLine={false}
-                              tickLine={false}
-                              width={0}
-                            />
-                            <Tooltip
-                              content={() => null}
-                              cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }}
-                            />
+                            <YAxis tick={false} axisLine={false} tickLine={false} width={0} />
+                            <Tooltip content={() => null} cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 2' }} />
                             <Area type="monotone"  dataKey="QL"   stroke="#8b5cf6" strokeWidth={2}   fillOpacity={1} fill="url(#colorQL)" isAnimationActive={false} dot={false} />
                             <Area type="stepAfter" dataKey={hKey} stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="7 4" fill="none" isAnimationActive={false} dot={false} />
                             <Area type="stepAfter" dataKey={lKey} stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="7 4" strokeOpacity={0.55} fill="none" isAnimationActive={false} dot={false} />
@@ -833,7 +783,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <SignalBadge state={signalMap[c.holding_ticker]} />
-                          <span className={`text-xs font-bold ${dir > 0 ? 'text-green-500' : dir < 0 ? 'text-red-500' : 'text-slate-400'}`}> 
+                          <span className={`text-xs font-bold ${dir > 0 ? 'text-green-500' : dir < 0 ? 'text-red-500' : 'text-slate-400'}`}>
                             {dir > 0 ? '+' : ''}{dir}
                           </span>
                         </div>
@@ -884,9 +834,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                           {c.change >= 0 ? '+' : ''}{c.change}%
                         </p>
                         <p className="text-xs text-slate-400 leading-tight">{c.time}</p>
-                        <p className="text-xs text-blue-400 font-medium leading-tight">
-                          {arDateFromStr(c.earnings_date)}
-                        </p>
+                        <p className="text-xs text-blue-400 font-medium leading-tight">{arDateFromStr(c.earnings_date)}</p>
                       </div>
                     </div>
                   ))
@@ -927,9 +875,7 @@ export function UserDashboard({ navigate, onLogout, user }: UserDashboardProps) 
                       </div>
                       <div className="text-left shrink-0">
                         <p className="text-sm font-bold text-green-600 dark:text-green-400 leading-tight">${c.dividend}</p>
-                        <p className="text-xs text-slate-400 leading-tight">
-                          {arDateFromStr(c.ex_date)}
-                        </p>
+                        <p className="text-xs text-slate-400 leading-tight">{arDateFromStr(c.ex_date)}</p>
                       </div>
                     </div>
                   ))

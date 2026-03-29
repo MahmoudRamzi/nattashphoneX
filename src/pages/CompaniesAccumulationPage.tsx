@@ -10,6 +10,7 @@ import {
 import { AppSidebar } from '@/components/AppSidebar';          // ← shared sidebar
 import type { AuthUser } from '@/hooks/useAuth';
 import * as echarts from 'echarts';
+import type { Page } from '@/App';
 
 /* ─── types ─────────────────────────────────────────────────────────── */
 interface RawRow {
@@ -606,10 +607,6 @@ function HistoryTable({ rows }: { rows: HistoryRow[] }) {
 }
 
 /* ─── Page props ─────────────────────────────────────────────────────── */
-type Page =
-  | 'home' | 'login' | 'register' | 'pricing' | 'education'
-  | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
-| 'admin-employees' | 'companies-accumulation' | 'premarket' | 'ticker-resell-signals';
 
 interface CompaniesAccumulationPageProps {
   navigate: (page: Page) => void;   // required — needed for sidebar navigation

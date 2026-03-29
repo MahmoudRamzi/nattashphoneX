@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
-  Home, Phone, GraduationCap, ChevronDown, ChevronUp,
+  Home, ChevronDown, ChevronUp,
   Settings, PieChart, Activity, LogOut, Shield,
+  GraduationCap, BarChart2, TrendingUp, Bell,
 } from 'lucide-react';
 import QafahLogo from '@/components/Qafah_logo';
 import type { AuthUser } from '@/hooks/useAuth';
@@ -11,7 +12,7 @@ type Page =
   | 'home' | 'login' | 'register' | 'pricing' | 'education'
   | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
   | 'admin-employees' | 'companies-accumulation' | 'premarket'
-  | 'ticker-resell-signals';
+  | 'ticker-resell-signals' | 'loads-detail' | 'crossing-report' | 'etfs-report';
 
 interface AppSidebarProps {
   navigate: (page: Page) => void;
@@ -19,18 +20,6 @@ interface AppSidebarProps {
   user?: AuthUser | null;
   activePage?: Page;
 }
-
-// ── Reusable external link styled as sub-item ─────────────────────────────────
-const ExternalSubLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
-  <a
-    href={href}
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-right px-3 py-2 rounded-lg text-sm w-full transition-colors text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 block"
-  >
-    {children}
-  </a>
-);
 
 // ══════════════════════════════════════════════════════════════════════════════
 export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarProps) {
@@ -52,7 +41,7 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
     }`;
 
   const subItemCls = (page?: Page) =>
-    `text-right px-3 py-2 rounded-lg text-sm w-full transition-colors ${
+    `text-right px-3 py-2 rounded-lg text-sm w-full transition-colors block ${
       page && isActive(page)
         ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-medium'
         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -70,12 +59,7 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
         <Home className="w-4 h-4" /> لوحة التحكم
       </button>
 
-      {/* Calls */}
-      {/*<button className={navItemCls()}>
-        <Phone className="w-4 h-4" /> Calls
-      </button>
-/}
-      {/* محفظتي — expandable */}
+      {/* ── محفظتي — expandable ──────────────────────────────────────────── */}
       <div>
         <button
           onClick={() => toggleMenu('portfolio')}
@@ -87,13 +71,16 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
 
         {expandedMenus.includes('portfolio') && (
           <div className="mr-4 mt-1 flex flex-col gap-0.5 border-r-2 border-slate-100 dark:border-slate-700 pr-3">
-           {/* <button className={subItemCls()}>الأسواق</button>*/}
+
+            {/* فاحص السوق — internal React page */}
             <button
               onClick={() => navigate('companies-accumulation')}
               className={subItemCls('companies-accumulation')}
             >
               فاحص السوق
             </button>
+
+            {/* Advanced Chart — admin only, internal */}
             {isAdmin && (
               <button
                 onClick={() => navigate('ticker-resell-signals')}
@@ -102,24 +89,38 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
                 Advanced Chart
               </button>
             )}
-            {/*https://app.qafah.com/?view=crossing*/} 
-            <ExternalSubLink href="https://app.qafah.com/?view=crossing">
+
+            {/* تقرير الاختراقات — was external, now internal iframe */}
+            <button
+              onClick={() => navigate('crossing-report')}
+              className={subItemCls('crossing-report')}
+            >
               تقرير الاختراقات
-            </ExternalSubLink>
-            {/*https://app.qafah.com/?view=etfs_report*/}
-            <ExternalSubLink href="https://app.qafah.com/?view=etfs_report">
+            </button>
+
+            {/* تقرير الأحمال — was external, now internal iframe */}
+            <button
+              onClick={() => navigate('etfs-report')}
+              className={subItemCls('etfs-report')}
+            >
               تقرير الأحمال
-            </ExternalSubLink>
-            {/*https://app.qafah.com/?view=alerts*/}
-            <ExternalSubLink href="https://app.qafah.com/loads">
+            </button>
+
+            {/* تفاصيل الأحمال — was external, now internal React page */}
+            <button
+              onClick={() => navigate('loads-detail')}
+              className={subItemCls('loads-detail')}
+            >
               تفاصيل الأحمال
-            </ExternalSubLink>
-            {/*<ExternalSubLink href="https://app.qafah.com/sector_rank">
-              Sector Ranks
-            </ExternalSubLink>*/}
-            <ExternalSubLink href="https://app.qafah.com/?view=alerts">
+            </button>
+
+            {/* التنبيهات — was external, now internal React page */}
+            <button
+              onClick={() => navigate('alerts')}
+              className={subItemCls('alerts')}
+            >
               التنبيهات
-            </ExternalSubLink>
+            </button>
           </div>
         )}
       </div>
@@ -129,7 +130,7 @@ export function AppSidebar({ navigate, onLogout, user, activePage }: AppSidebarP
         <Activity className="w-4 h-4" /> Indicators Alerts
       </button>
 
-      {/* التعليم — expandable */}
+      {/* ── التعليم — expandable ─────────────────────────────────────────── */}
       <div>
         <button
           onClick={() => toggleMenu('education')}

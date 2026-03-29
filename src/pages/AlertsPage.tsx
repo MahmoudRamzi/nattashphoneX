@@ -1,397 +1,492 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Bell, Moon, Sun, LogOut, RefreshCw, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
+import { AppSidebar } from '@/components/AppSidebar';
+import type { AuthUser } from '@/hooks/useAuth';
 
-import {
-  Bell,
-  Menu,
-  X,
-  BarChart3,
-  PieChart,
-  History,
-  Activity,
-  Moon,
-  Sun,
-  User,
-  Plus,
-  Minus,
-  RotateCcw,
-  DollarSign,
-  AlertTriangle,
-  CheckCircle2
-} from 'lucide-react';
+const API_BASE = 'https://app.qafah.com';
 
-// بيانات التنبيهات
-const importantAlerts = [
-  {
-    id: 1,
-    type: 'distribution',
-    title: 'تنبيه تصريف جديد',
-    description: 'AAPL: رصدنا بيع مؤسسي بقيمة $12M',
-    action: 'قرار',
-    urgent: true,
-  },
-  {
-    id: 2,
-    type: 'early_distribution',
-    title: 'تنبيه تصريف مبكر مكتشف',
-    description: 'محفظة Whale Alpha قامت ببيع 40% من مركزها في TSLA خلال الساعة الماضية',
-    action: 'قرار',
-    urgent: true,
-  },
-];
+type Page =
+  | 'home' | 'login' | 'register' | 'pricing' | 'education'
+  | 'admin' | 'dashboard' | 'alerts' | 'employee' | 'leaderboard'
+  | 'admin-employees' | 'companies-accumulation' | 'premarket'
+  | 'ticker-resell-signals' | 'loads-detail' | 'crossing-report' | 'etfs-report';
 
-const accumulationAlert = {
-  id: 3,
-  type: 'accumulation',
-  title: 'تجميع جديد مكتشف',
-  description: 'GOOGL: شراء مؤسسي كبير بقيمة $18M',
-  action: 'قرار',
-};
-
-// بيانات عقود Options
-const optionsContracts = [
-  {
-    id: 1,
-    symbol: 'MSFT',
-    name: 'Microsoft',
-    signal: 'neutral',
-    signalAr: 'محايد',
-    strike: 415,
-    contracts: 17,
-    premium: 10,
-    entryPrice: 15.20,
-    pnl: 420,
-    pnlPercent: 2.8,
-    activityLevel: 45,
-    activityText: 'تذبذب في النشاط - مراقبة مستمرة',
-    color: 'yellow',
-  },
-  {
-    id: 2,
-    symbol: 'AAPL',
-    name: 'Apple',
-    signal: 'distribution',
-    signalAr: 'تصريف',
-    strike: 195,
-    contracts: 17,
-    premium: 20,
-    entryPrice: 8.30,
-    pnl: -1840,
-    pnlPercent: -11.1,
-    activityLevel: 75,
-    activityText: 'بيع مؤسسي مكثف (4 صفقات كبيرة) ⚠️',
-    color: 'red',
-  },
-  {
-    id: 3,
-    symbol: 'NVDA',
-    name: 'NVIDIA',
-    signal: 'accumulation',
-    signalAr: 'تجميع',
-    strike: 875,
-    contracts: 20,
-    premium: 15,
-    entryPrice: 12.50,
-    pnl: 3240,
-    pnlPercent: 17.2,
-    activityLevel: 85,
-    activityText: 'شراء مؤسسي متصاعد (+240% عن المتوسط)',
-    color: 'green',
-  },
-];
-
-type Page = 'home' | 'login' | 'register' | 'pricing' | 'education' | 'admin' | 'dashboard' | 'alerts';
+interface AlertItem {
+  ticker: string;
+  alert_time: string;
+  cp: number;
+  frame: string;
+  filter: string;
+  target: string | null;
+  tp1: number | null;
+  tp2: number | null;
+  g_5d: boolean;
+  g_10d: boolean;
+  l_5d: boolean;
+  l_10d: boolean;
+}
 
 interface AlertsPageProps {
   navigate: (page: Page) => void;
+  onLogout?: () => void;
+  user?: AuthUser | null;
 }
 
-export function AlertsPage({ navigate }: AlertsPageProps) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+function formatAlertTime(isoStr: string, showSeconds = false) {
+  try {
+    const safe = isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z';
+    const d = new Date(safe);
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const hours = String(d.getUTCHours()).padStart(2, '0');
+    const mins = String(d.getUTCMinutes()).padStart(2, '0');
+    const secs = String(d.getUTCSeconds()).padStart(2, '0');
+    return showSeconds
+      ? `${year}-${month}-${day} ${hours}:${mins}:${secs}`
+      : `${year}-${month}-${day} ${hours}:${mins}`;
+  } catch { return isoStr; }
+}
+
+function getToken() {
+  return localStorage.getItem('access_token') || localStorage.getItem('token') || '';
+}
+
+const CompanyLogo = ({ ticker }: { ticker: string }) => {
+  const [err, setErr] = useState(false);
+  if (err) return (
+    <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-white shrink-0">
+      {ticker.charAt(0)}
+    </div>
+  );
+  return (
+    <img
+      src={`${API_BASE}/static/logos_tickers/${ticker}.png`}
+      alt={ticker}
+      className="w-7 h-7 rounded-lg object-cover shrink-0"
+      onError={() => setErr(true)}
+    />
+  );
+};
+
+const SkeletonRow = () => (
+  <tr className="animate-pulse">
+    {Array.from({ length: 4 }).map((_, i) => (
+      <td key={i} className="py-3 px-4">
+        <div className="h-4 bg-slate-100 dark:bg-slate-700/60 rounded" />
+      </td>
+    ))}
+  </tr>
+);
+
+const KNOWN_FRAMES = ['1', '5', '15', '30', '60', '240', 'D'];
+const KNOWN_FILTERS = [
+  'All',
+  'منطقة دعم رئيسية',
+  'منطقة مقاومة رئيسية',
+  'تقاطع صاعد',
+  'تقاطع هابط',
+];
+const QUICK_TICKERS = ['QQQ', 'SPY', 'US100', 'US500'];
+
+// ═════════════════════════════════════════════════════════════════════════════
+export function AlertsPage({ navigate, onLogout, user }: AlertsPageProps) {
   const [isDark, setIsDark] = useState(false);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
 
-  const getSignalBadge = (signal: string, color: string) => {
-    const styles = {
-      yellow: 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700',
-      red: 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700',
-      green: 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700',
+  // filters
+  const [tickerSearch, setTickerSearch] = useState('');
+  const [quickTicker, setQuickTicker] = useState<string | null>(null);
+  const [selectedFrames, setSelectedFrames] = useState<string[]>([]);
+  const [frameDropOpen, setFrameDropOpen] = useState(false);
+  const frameDropRef = useRef<HTMLDivElement>(null);
+
+  const [dateMode, setDateMode] = useState<'all' | 'today' | 'yesterday' | 'week'>('today');
+  const [useDatePicker, setUseDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [useHour, setUseHour] = useState(false);
+  const [selectedHour, setSelectedHour] = useState('');
+  const [showSeconds, setShowSeconds] = useState(false);
+  const [filterValue, setFilterValue] = useState('All');
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (frameDropRef.current && !frameDropRef.current.contains(e.target as Node))
+        setFrameDropOpen(false);
     };
-    
-    return (
-      <Badge className={`${styles[color as keyof typeof styles]} px-4 py-1.5 text-sm font-medium border`}>
-        <span className={`w-2 h-2 rounded-full ml-2 ${color === 'yellow' ? 'bg-yellow-500' : color === 'red' ? 'bg-red-500' : 'bg-green-500'}`} />
-        {signal}
-      </Badge>
-    );
-  };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
-  const getActivityBarColor = (color: string) => {
-    switch (color) {
-      case 'yellow':
-        return 'bg-yellow-500';
-      case 'red':
-        return 'bg-red-500';
-      case 'green':
-        return 'bg-green-500';
-      default:
-        return 'bg-purple-500';
+  const buildBody = useCallback(() => {
+    let date_filter: string;
+    if (useDatePicker && selectedDate) {
+      date_filter = selectedDate;
+    } else {
+      date_filter = dateMode === 'today' ? 'max'
+        : dateMode === 'yesterday' ? 'yesterday'
+        : 'all';
     }
-  };
+
+    let ticker: string[];
+    if (quickTicker) {
+      ticker = [quickTicker];
+    } else if (tickerSearch.trim()) {
+      ticker = tickerSearch.trim().toUpperCase().split(/[\s,]+/);
+    } else {
+      ticker = ['all'];
+    }
+
+    return {
+      date_filter,
+      ticker,
+      frame: selectedFrames.length > 0 ? selectedFrames : ['all'],
+      filter: filterValue === 'All' ? ['all'] : [filterValue],
+      g_5d: false, l_5d: false, g_10d: false, l_10d: false,
+      ...(useHour && selectedHour.trim() !== '' && { selected_hour: parseInt(selectedHour, 10) }),
+    };
+  }, [dateMode, useDatePicker, selectedDate, quickTicker, tickerSearch, selectedFrames, filterValue, useHour, selectedHour]);
+
+  const fetchAlerts = useCallback(async (showSpinner = false) => {
+    try {
+      if (showSpinner) setIsRefreshing(true);
+      else setLoading(true);
+      setError(null);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/api/alerts`, {
+        method: 'POST', headers, body: JSON.stringify(buildBody()),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: { status: string; data: AlertItem[] } = await res.json();
+      setAlerts(data.data ?? []);
+      setLastRefreshed(new Date());
+    } catch (e: any) {
+      setError(e.message ?? 'Unknown error');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [buildBody]);
+
+  useEffect(() => { fetchAlerts(); }, []);
+  useEffect(() => {
+    const id = setInterval(() => fetchAlerts(true), 60_000);
+    return () => clearInterval(id);
+  }, [fetchAlerts]);
+
+  const displayedAlerts = [...alerts]
+    .filter(a => {
+      if (!quickTicker && tickerSearch.trim())
+        return a.ticker.toUpperCase().includes(tickerSearch.trim().toUpperCase());
+      return true;
+    })
+    .sort((a, b) => {
+      const diff = new Date(b.alert_time).getTime() - new Date(a.alert_time).getTime();
+      return sortDir === 'desc' ? diff : -diff;
+    });
+
+  const refreshLabel = lastRefreshed
+    ? `${String(lastRefreshed.getHours()).padStart(2,'0')}:${String(lastRefreshed.getMinutes()).padStart(2,'0')}`
+    : null;
+
+  const toggleFrame = (f: string) =>
+    setSelectedFrames(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]);
+
+  // styles
+  const th = "align-top px-4 py-2.5 text-white bg-[#145c38] border-r border-[#0e4429] last:border-r-0";
+  const colInput = "w-full px-2 py-1 text-[11px] rounded border border-[#1a7a4a] bg-[#0d3d22] text-white placeholder:text-emerald-400 focus:outline-none focus:border-emerald-300";
+  const radioLbl = "flex items-center gap-1 cursor-pointer text-[11px] text-emerald-100 font-medium whitespace-nowrap";
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Top Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Left Side */}
-            <div className="flex items-center gap-4">
-              <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2">
-                <Menu className="w-6 h-6 text-slate-700 dark:text-slate-300" />
-              </button>
-              
-              {/* Logo */}
-              <button onClick={() => navigate('home')}>
-                <img src="/logo.png" alt="قافة" className="h-10 w-auto" />
-              </button>
+    <div className={`min-h-screen flex flex-col ${isDark ? 'dark bg-slate-900' : 'bg-slate-50'}`} dir="rtl">
 
-              {/* Wallet Balance */}
-              <div className="hidden md:flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-4 py-2 rounded-xl">
-                <span className="text-sm">رصيد المحفظة</span>
-                <span className="font-bold">$124,532.80</span>
-              </div>
-            </div>
+      {/* Nav */}
+      <div className="h-14 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center px-5 justify-between sticky top-0 z-20 shadow-sm">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIsDark(p => !p)} className="w-9 h-9 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center">
+            {isDark ? <Sun className="w-4 h-4 text-yellow-400" /> : <Moon className="w-4 h-4 text-slate-500" />}
+          </button>
+          {onLogout && (
+            <button onClick={onLogout} className="w-9 h-9 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500">
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={() => fetchAlerts(true)}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 rounded-lg text-xs text-slate-600 dark:text-slate-300 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {refreshLabel ?? 'تحديث'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 text-slate-700 dark:text-white font-bold text-sm">
+          <Bell className="w-4 h-4 text-red-500" /> التنبيهات والإشارات
+        </div>
+        <div className="w-28" />
+      </div>
 
-            {/* Nav Links */}
-            <div className="hidden md:flex items-center gap-8">
-              <button onClick={() => navigate('education')} className="text-sm text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">التعليم</button>
-              <button onClick={() => navigate('pricing')} className="text-sm text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">التقارير</button>
-              <button className="text-sm text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">السجل</button>
-              <button onClick={() => navigate('dashboard')} className="text-sm text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">الفرص</button>
-            </div>
+      <div className="flex flex-1">
+        <AppSidebar navigate={navigate} onLogout={onLogout} user={user} activePage="alerts" />
 
-            {/* Right Side */}
-            <div className="flex items-center gap-4">
-              <button className="hidden md:flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm">
-                <User className="w-4 h-4" />
-                <span>محفظتي</span>
-              </button>
-              
-              <button 
-                onClick={() => setIsDark(!isDark)}
-                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        <main className="flex-1 p-4 overflow-auto min-w-0">
+
+          {/* ── Quick Ticker Bar ── */}
+          <div className="flex items-center justify-center gap-2 mb-4 flex-wrap">
+            {QUICK_TICKERS.map(t => (
+              <button
+                key={t}
+                onClick={() => { setQuickTicker(prev => prev === t ? null : t); setTickerSearch(''); }}
+                className={`px-5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
+                  quickTicker === t
+                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                    : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:border-emerald-500 hover:text-emerald-700'
+                }`}
               >
-                {isDark ? <Sun className="w-5 h-5 text-slate-600" /> : <Moon className="w-5 h-5 text-slate-600" />}
+                {t}
               </button>
-
-              <button className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative">
-                <Bell className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">3</span>
-              </button>
-            </div>
+            ))}
+            <button
+              onClick={() => { setQuickTicker(null); setTickerSearch(''); }}
+              className={`px-5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
+                quickTicker === null
+                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-md'
+                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:border-emerald-500'
+              }`}
+            >
+              Show All
+            </button>
           </div>
-        </div>
-      </nav>
 
-      {/* Mobile Sidebar */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setIsSidebarOpen(false)} />
-          <div className="absolute right-0 top-0 h-full w-72 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 p-6">
-            <div className="flex items-center justify-between mb-8">
-              <span className="text-lg font-bold text-slate-900 dark:text-white">القائمة</span>
-              <button onClick={() => setIsSidebarOpen(false)}>
-                <X className="w-6 h-6 text-slate-600 dark:text-slate-400" />
-              </button>
+          {error && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 dark:bg-red-900/20 text-red-600 text-sm rounded-xl border border-red-100">
+              <AlertCircle className="w-4 h-4 shrink-0" /> {error}
             </div>
-            <nav className="space-y-4">
-              <button onClick={() => navigate('dashboard')} className="w-full flex items-center gap-3 p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
-                <BarChart3 className="w-5 h-5" />
-                <span>الفرص</span>
-              </button>
-              <button onClick={() => navigate('alerts')} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400">
-                <Bell className="w-5 h-5" />
-                <span>التنبيهات</span>
-              </button>
-              <button onClick={() => navigate('pricing')} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400">
-                <PieChart className="w-5 h-5" />
-                <span>التقارير</span>
-              </button>
-              <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400">
-                <History className="w-5 h-5" />
-                <span>السجل</span>
-              </button>
-            </nav>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Important Alerts Section */}
-        <div className="space-y-4 mb-8">
-          {/* Distribution Alerts */}
-          {importantAlerts.map((alert) => (
-            <Card key={alert.id} className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-700 overflow-hidden">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <Button className="bg-yellow-500 hover:bg-yellow-600 text-white rounded-full px-6">
-                      {alert.action}
-                    </Button>
-                    <div>
-                      <h3 className="font-bold text-yellow-800 dark:text-yellow-400 text-lg">{alert.title}</h3>
-                      <p className="text-yellow-700 dark:text-yellow-300 text-sm">{alert.description}</p>
-                    </div>
-                  </div>
-                  <div className="w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle className="w-6 h-6 text-white" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-          {/* Accumulation Alert */}
-          <Card className="bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 overflow-hidden">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Button className="bg-green-500 hover:bg-green-600 text-white rounded-full px-6">
-                    {accumulationAlert.action}
-                  </Button>
-                  <div>
-                    <h3 className="font-bold text-green-800 dark:text-green-400 text-lg">{accumulationAlert.title}</h3>
-                    <p className="text-green-700 dark:text-green-300 text-sm">{accumulationAlert.description}</p>
-                  </div>
-                </div>
-                <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle2 className="w-6 h-6 text-white" />
-                </div>
+          {/* ── Table ── */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow border border-slate-100 dark:border-slate-700 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
+              <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2.5 py-0.5 rounded-full font-bold">
+                {loading ? '…' : `${displayedAlerts.length} إشارة`}
+              </span>
+              <div className="flex items-center gap-2">
+                {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+                {refreshLabel && <span className="text-xs text-slate-400 font-mono">آخر تحديث: {refreshLabel}</span>}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
 
-        {/* Options Contracts Section */}
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white text-right">
-            عقود Options النشطة <span className="text-purple-600">(6)</span>
-          </h2>
-        </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr>
 
-        {/* Options Cards Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {optionsContracts.map((contract) => (
-            <Card key={contract.id} className={`overflow-hidden border-2 ${
-              contract.color === 'yellow' ? 'border-yellow-400 dark:border-yellow-600' :
-              contract.color === 'red' ? 'border-red-400 dark:border-red-600' :
-              'border-green-400 dark:border-green-600'
-            }`}>
-              <CardContent className="p-0">
-                {/* Header */}
-                <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between mb-4">
-                    {getSignalBadge(contract.signalAr, contract.color)}
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <h3 className="font-bold text-slate-900 dark:text-white text-lg">{contract.symbol}</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{contract.name}</p>
-                      </div>
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold ${
-                        contract.color === 'yellow' ? 'bg-yellow-500' :
-                        contract.color === 'red' ? 'bg-red-500' : 'bg-green-500'
-                      }`}>
-                        {contract.symbol.slice(0, 2)}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-right text-sm text-slate-600 dark:text-slate-400">
-                    بلو Call ${contract.strike} | {contract.contracts}
-                  </div>
-                </div>
-
-                {/* Contract Details */}
-                <div className="p-4">
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">الكمية</p>
-                      <p className="font-bold text-slate-900 dark:text-white">{contract.premium} عقد</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">سعر الدخول</p>
-                      <p className="font-bold text-slate-900 dark:text-white">${contract.entryPrice}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">الربح/الخسارة</p>
-                      <p className={`font-bold ${contract.pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        ({contract.pnlPercent >= 0 ? '+' : ''}{contract.pnlPercent}%) {contract.pnl >= 0 ? '+' : ''}${Math.abs(contract.pnl).toLocaleString()}{contract.pnl < 0 ? '-' : '+'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">سعر الدخول</p>
-                      <p className="font-bold text-slate-900 dark:text-white">${contract.entryPrice}</p>
-                    </div>
-                  </div>
-
-                  {/* Activity Bar */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <Activity className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-600 dark:text-slate-400">نشاط كبار الملاك اليوم</span>
-                    </div>
-                    <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${getActivityBarColor(contract.color)}`}
-                        style={{ width: `${contract.activityLevel}%` }}
+                    {/* ticker */}
+                    <th className={th} style={{ width: '220px' }}>
+                      <div className="text-xs font-bold mb-2">ticker</div>
+                      <input
+                        value={tickerSearch}
+                        onChange={e => { setTickerSearch(e.target.value); setQuickTicker(null); }}
+                        onKeyDown={e => e.key === 'Enter' && fetchAlerts()}
+                        placeholder="Search tickers..."
+                        className={colInput}
                       />
-                    </div>
-                  </div>
+                    </th>
 
-                  {/* Activity Text */}
-                  <div className={`p-3 rounded-lg mb-4 text-right text-sm ${
-                    contract.color === 'yellow' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400' :
-                    contract.color === 'red' ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
-                    'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                  }`}>
-                    {contract.activityText}
-                  </div>
+                    {/* frame */}
+                    <th className={th} style={{ width: '170px' }}>
+                      <div className="text-xs font-bold mb-2">frame</div>
+                      <div className="relative" ref={frameDropRef}>
+                        <button
+                          onClick={() => setFrameDropOpen(p => !p)}
+                          className="w-full flex items-center justify-between px-2 py-1 text-[11px] rounded border border-[#1a7a4a] bg-[#0d3d22] text-white hover:border-emerald-300 transition-colors"
+                        >
+                          <span className="truncate">
+                            {selectedFrames.length === 0 ? 'Select Frames ▼' : selectedFrames.join(', ')}
+                          </span>
+                          <ChevronDown className="w-3 h-3 shrink-0 ml-1" />
+                        </button>
+                        {frameDropOpen && (
+                          <div className="absolute top-full mt-1 left-0 z-30 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl shadow-xl py-1 min-w-[120px]">
+                            {KNOWN_FRAMES.map(f => (
+                              <label key={f} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer text-xs text-slate-700 dark:text-slate-200">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedFrames.includes(f)}
+                                  onChange={() => toggleFrame(f)}
+                                  className="accent-emerald-600 w-3.5 h-3.5"
+                                />
+                                {f}
+                              </label>
+                            ))}
+                            {selectedFrames.length > 0 && (
+                              <button
+                                onClick={() => setSelectedFrames([])}
+                                className="w-full text-left px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 border-t border-slate-100 dark:border-slate-700 mt-0.5"
+                              >
+                                مسح الكل
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </th>
 
-                  {/* Action Buttons */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button className={`${
-                      contract.color === 'yellow' ? 'bg-yellow-500 hover:bg-yellow-600' :
-                      contract.color === 'red' ? 'bg-red-500 hover:bg-red-600' :
-                      'bg-green-500 hover:bg-green-600'
-                    } text-white rounded-xl`}>
-                      <Plus className="w-4 h-4 ml-2" />
-                      زيادة
-                    </Button>
-                    <Button variant="outline" className="border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-xl">
-                      <Minus className="w-4 h-4 ml-2" />
-                      إلغاء
-                    </Button>
-                    <Button variant="outline" className="border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-xl">
-                      <RotateCcw className="w-4 h-4 ml-2" />
-                      تحويل
-                    </Button>
-                    <Button variant="outline" className="border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-xl">
-                      <DollarSign className="w-4 h-4 ml-2" />
-                      بيع
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </main>
+                    {/* datetime */}
+                    <th className={th}>
+                      <div
+                        onClick={() => setSortDir(p => p === 'desc' ? 'asc' : 'desc')}
+                        className="text-xs font-bold mb-2 cursor-pointer hover:text-emerald-200 select-none inline-flex items-center gap-1"
+                      >
+                        datetime {sortDir === 'desc' ? '↓' : '↑'}
+                      </div>
+
+                      {/* All / Today / Yesterday / Week */}
+                      <div className="flex gap-3 flex-wrap mb-2">
+                        {([
+                          { v: 'all',       l: 'All'       },
+                          { v: 'today',     l: 'Today'     },
+                          { v: 'yesterday', l: 'Yesterday' },
+                          { v: 'week',      l: 'Week'      },
+                        ] as const).map(({ v, l }) => (
+                          <label key={v} className={radioLbl}>
+                            <input
+                              type="radio"
+                              name="dateMode"
+                              value={v}
+                              checked={dateMode === v}
+                              onChange={() => { setDateMode(v); setUseDatePicker(false); }}
+                              className="accent-white w-3 h-3"
+                            />
+                            {l}
+                          </label>
+                        ))}
+                      </div>
+
+                      {/* Date picker */}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <input
+                          type="checkbox"
+                          checked={useDatePicker}
+                          onChange={e => setUseDatePicker(e.target.checked)}
+                          className="accent-white w-3 h-3 shrink-0"
+                        />
+                        <input
+                          type="date"
+                          value={selectedDate}
+                          onChange={e => { setSelectedDate(e.target.value); setUseDatePicker(true); }}
+                          disabled={!useDatePicker}
+                          className="px-1.5 py-0.5 text-[11px] rounded border border-[#1a7a4a] bg-[#0d3d22] text-white focus:outline-none focus:border-emerald-300 disabled:opacity-40"
+                        />
+                      </div>
+
+                      {/* Hour picker */}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <input
+                          type="checkbox"
+                          checked={useHour}
+                          onChange={e => setUseHour(e.target.checked)}
+                          className="accent-white w-3 h-3 shrink-0"
+                        />
+                        <input
+                          type="number"
+                          min={0} max={23}
+                          value={selectedHour}
+                          onChange={e => setSelectedHour(e.target.value)}
+                          placeholder="Hour"
+                          disabled={!useHour}
+                          className="w-20 px-1.5 py-0.5 text-[11px] rounded border border-[#1a7a4a] bg-[#0d3d22] text-white placeholder:text-emerald-500 focus:outline-none focus:border-emerald-300 disabled:opacity-40"
+                        />
+                      </div>
+
+                      {/* Show seconds */}
+                      <label className={radioLbl}>
+                        <input
+                          type="checkbox"
+                          checked={showSeconds}
+                          onChange={e => setShowSeconds(e.target.checked)}
+                          className="accent-white w-3 h-3"
+                        />
+                        Show seconds
+                      </label>
+                    </th>
+
+                    {/* filter */}
+                    <th className={th} style={{ minWidth: '200px' }}>
+                      <div className="text-xs font-bold mb-2">filter</div>
+                      <select
+                        value={filterValue}
+                        onChange={e => setFilterValue(e.target.value)}
+                        className="w-full px-2 py-1 text-[11px] rounded border border-[#1a7a4a] bg-[#0d3d22] text-white focus:outline-none focus:border-emerald-300"
+                      >
+                        {KNOWN_FILTERS.map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+                    </th>
+
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/30">
+                  {loading
+                    ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+                    : displayedAlerts.length === 0
+                    ? (
+                      <tr>
+                        <td colSpan={4} className="text-center py-16 text-slate-400 text-sm">
+                          لا توجد إشارات للفترة المحددة
+                        </td>
+                      </tr>
+                    )
+                    : displayedAlerts.map((alert, idx) => (
+                        <tr
+                          key={`${alert.ticker}-${alert.alert_time}-${idx}`}
+                          className={`transition-colors ${
+                            idx % 2 === 0
+                              ? 'bg-white dark:bg-slate-800'
+                              : 'bg-[#f0fdf4]/60 dark:bg-slate-800/40'
+                          } hover:bg-emerald-50/70 dark:hover:bg-emerald-900/10`}
+                        >
+                          <td className="py-2.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <CompanyLogo ticker={alert.ticker} />
+                              <span className="font-bold text-slate-800 dark:text-white text-xs">{alert.ticker}</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold border border-emerald-100 dark:border-emerald-800">
+                              {alert.frame || '—'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 whitespace-nowrap font-mono text-xs text-slate-600 dark:text-slate-300">
+                            {formatAlertTime(alert.alert_time, showSeconds)}
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-300 max-w-xs truncate" title={alert.filter}>
+                            {alert.filter}
+                          </td>
+                        </tr>
+                      ))}
+                </tbody>
+              </table>
+            </div>
+
+            {!loading && displayedAlerts.length > 0 && (
+              <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-400 flex items-center justify-between">
+                <span>يتجدد تلقائياً كل دقيقة</span>
+                <span>إجمالي: {displayedAlerts.length} إشارة</span>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
